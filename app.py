@@ -19,6 +19,9 @@ GEOJSON_PATH = BASE_DIR / "ukraine_hromadas.geojson"
 SHEET_NAME = "Provider Data"
 
 COL_HROMADA = "Hromada"
+COL_OBLAST = "Oblast"
+COL_RAION = "Raion"
+COL_ADDRESS = "Address"
 COL_PROVIDER_NAME = "Provider Name"
 COL_NHSU = "NHSU package (25/53/54)"
 COL_OWNERSHIP = "Ownership / funding type (public / communal / private / NGO-charitable / donor / mixed)"
@@ -69,6 +72,81 @@ OWNERSHIP_ALIASES = {
     "mixed": "mixed",
 }
 
+# Значення області в Excel подані іменниковими англійськими назвами, тоді як
+# GeoJSON містить офіційні українські назви. Явний невеликий словник робить
+# перетворення аудованим і не дозволяє випадково змішати Київ із Київською обл.
+EXCEL_OBLAST_TO_GEO = {
+    "cherkasy": "Черкаська область",
+    "chernihiv": "Чернігівська область",
+    "chernivtsi": "Чернівецька область",
+    "dnipropetrovsk": "Дніпропетровська область",
+    "donetsk": "Донецька область",
+    "ivano-frankivsk": "Івано-Франківська область",
+    "kharkiv": "Харківська область",
+    "kherson": "Херсонська область",
+    "khmelnytskyi": "Хмельницька область",
+    "kirovohrad": "Кіровоградська область",
+    "kyiv": "Київська область",
+    "kyiv oblast": "Київська область",
+    "kyiv city": "Київ",
+    "luhansk": "Луганська область",
+    "lviv": "Львівська область",
+    "mykolaiv": "Миколаївська область",
+    "odesa": "Одеська область",
+    "poltava": "Полтавська область",
+    "rivne": "Рівненська область",
+    "sumy": "Сумська область",
+    "ternopil": "Тернопільська область",
+    "vinnytsia": "Вінницька область",
+    "volyn": "Волинська область",
+    "zakarpattia": "Закарпатська область",
+    "zaporizhzhia": "Запорізька область",
+    "zhytomyr": "Житомирська область",
+}
+
+HROMADA_TYPE_ALIASES = {
+    "miska": "city",
+    "silska": "rural",
+    "selyshchna": "settlement",
+    "terytorialna": "territorial",
+}
+
+# Короткі іменникові назви районних центрів з Excel зводимо до прикметникових
+# ключів районів у GeoJSON. Словник навмисно обмежений перевіреними конфліктами:
+# він не застосовує нечітке зіставлення і не може перекинути рядок в іншу область.
+EXCEL_RAION_TO_GEO_KEY = {
+    "berdiansk": "berdianskyi",
+    "brovary": "brovarskyi",
+    "dnipro": "dniprovskyi",
+    "nikopol": "nikopolskyi",
+    "nizhyn": "nizhynskyi",
+    "odesa": "odeskyi",
+    "pervomaisk": "pervomaiskyi",
+    "polohy": "polohivskyi",
+    "pryluky": "prylutskyi",
+    "rozdilna": "rozdilnianskyi",
+    "sumy": "sumskyi",
+    "synelnykove": "synelnykivskyi",
+    "vasylivka": "vasylivskyi",
+    "zaporizhzhia": "zaporizkyi",
+}
+
+# Перевірені орфографічні варіанти, де Excel і GeoJSON описують ту саму громаду.
+EXCEL_HROMADA_ALIASES = {
+    "andriivska": "andrivska",
+}
+
+# У вихідному GeoJSON дві різні Талалаївські громади мають однакові підписи.
+# Геометрія geo:341 відповідає селищній громаді Прилуцького району; geo:340 —
+# сільській громаді Ніжинського району. Це підтверджено складом районів на
+# державному порталі decentralization.gov.ua.
+GEO_PROPERTY_CORRECTIONS = {
+    341: {
+        "hromada": "Талалаївська селищна громада",
+        "rayon": "Прилуцький район",
+    },
+}
+
 # Excel часто записує обласні/великі районні центри іменниковою формою міста
 # ("Kharkiv"), а не прикметниковою формою громади ("Харківська"), тому
 # транслітерація+нормалізація їх не зматчить. Це прямий обхід для таких кейсів:
@@ -113,12 +191,8 @@ CITY_TO_HROMADA_MAPPING = {
     "Brovary": "Броварська",
     "Kamianets-Podilskyi": "Кам'янець-Подільська",
     "Zalishchyky": "Заліщицька",
-    # УВАГА: "Oleksandriia" неоднозначна в самому GeoJSON — після нормалізації
-    # (відкидання "міська"/"сільська") норм-ключ "oleksandriiska" належить ОДРАЗУ
-    # двом різним громадам: Олександрійська міська громада (Кіровоградська обл.)
-    # і Олександрійська сільська громада (Рівненська обл.). Обидві отримають
-    # однакові (об'єднані) цифри — це відома залишкова похибка схеми, а не баг
-    # цього запису.
+    # Назва "Oleksandriia" повторюється в кількох областях, але новий складений
+    # ключ (область + назва + конкретний geo_id) розділяє ці громади коректно.
     "Oleksandriia": "Олександрійська",
     "Stryi": "Стрийська",
     "Drohobych": "Дрогобицька",
@@ -379,10 +453,54 @@ def normalize_hromada_from_excel(raw_value: str) -> str:
     формою міста, напр. "Kharkiv", замість прикметникової форми громади).
     """
     base = normalize_text_en(raw_value)
+    base = EXCEL_HROMADA_ALIASES.get(base, base)
     mapped_ua_adj = _CITY_TO_HROMADA_LOOKUP.get(base)
     if mapped_ua_adj is not None:
         return normalize_text_en(transliterate_ua_to_en(mapped_ua_adj))
     return base
+
+
+def normalize_oblast_from_excel(raw_value) -> str | None:
+    if not is_filled(raw_value):
+        return None
+    return EXCEL_OBLAST_TO_GEO.get(re.sub(r"\s+", " ", str(raw_value).strip().lower()))
+
+
+def normalize_raion(text) -> str:
+    if not is_filled(text):
+        return ""
+    base = normalize_text(str(text), ["raion"])
+    return EXCEL_RAION_TO_GEO_KEY.get(base, base)
+
+
+def detect_hromada_type(text) -> str | None:
+    if not is_filled(text):
+        return None
+    transliterated = transliterate_ua_to_en(str(text)).lower()
+    tokens = set(re.findall(r"[a-z]+", transliterated))
+    for token, canonical in HROMADA_TYPE_ALIASES.items():
+        if token in tokens:
+            return canonical
+    return None
+
+
+def detect_hromada_type_from_row(row: pd.Series) -> str | None:
+    """Визначає тип громади з назви, а для коротких назв — з адреси."""
+    explicit_type = detect_hromada_type(row.get(COL_HROMADA))
+    if explicit_type:
+        return explicit_type
+
+    if not is_filled(row.get(COL_ADDRESS)):
+        return None
+    address = str(row.get(COL_ADDRESS)).lower()
+    # Порядок важливий: у деяких адресах одночасно трапляються "с." і "смт".
+    if re.search(r"(?:^|[\s,])(?:смт|с-ще|селище)\.?\s", address):
+        return "settlement"
+    if re.search(r"(?:^|[\s,])(?:м\.|місто\s)", address):
+        return "city"
+    if re.search(r"(?:^|[\s,])(?:с\.|село\s)", address):
+        return "rural"
+    return None
 
 
 def transliterate_ua_to_en(text: str) -> str:
@@ -437,18 +555,86 @@ def load_geojson(path: str) -> dict:
     with open(path, encoding="utf-8") as f:
         geo = json.load(f)
 
-    for feature in geo["features"]:
+    for index, feature in enumerate(geo["features"]):
         props = feature["properties"]
+        correction = GEO_PROPERTY_CORRECTIONS.get(props.get("id"))
+        if correction:
+            props.update(correction)
         hromada_ua = props.get("hromada", "")
         hromada_en = transliterate_ua_to_en(hromada_ua)
         oblast_ua = props.get("region", "")
         oblast_en = transliterate_ua_to_en(oblast_ua)
+        rayon_ua = props.get("rayon", "")
+        rayon_en = transliterate_ua_to_en(rayon_ua)
         props["hromada_ua"] = hromada_ua
         props["hromada_en"] = hromada_en
         props["oblast_ua"] = oblast_ua
         props["oblast_en"] = oblast_en
+        props["rayon_ua"] = rayon_ua
+        props["rayon_en"] = rayon_en
         props["norm_key"] = normalize_text_en(hromada_en)
+        props["raion_key"] = normalize_raion(rayon_en)
+        props["hromada_type"] = detect_hromada_type(hromada_en)
+        props["geo_id"] = f"geo:{props.get('id', index)}"
     return geo
+
+
+def resolve_facility_geography(df: pd.DataFrame, geo: dict) -> pd.DataFrame:
+    """Однозначно зіставляє рядок Excel із конкретною фічею GeoJSON.
+
+    Пошук завжди обмежується областю. Якщо в області є кілька однойменних
+    громад, додатково використовуються район і тип громади. Неоднозначний
+    випадок не вгадується: він лишається unmatched із відповідним статусом.
+    """
+    candidates_by_region_and_name: dict[tuple[str, str], list[dict]] = {}
+    for feature in geo["features"]:
+        props = feature["properties"]
+        candidates_by_region_and_name.setdefault((props["oblast_ua"], props["norm_key"]), []).append(feature)
+
+    geo_ids: list[str | None] = []
+    statuses: list[str] = []
+    candidate_counts: list[int] = []
+
+    for _, row in df.iterrows():
+        oblast_ua = normalize_oblast_from_excel(row.get(COL_OBLAST))
+        if oblast_ua is None:
+            geo_ids.append(None)
+            statuses.append("unknown_oblast")
+            candidate_counts.append(0)
+            continue
+
+        candidates = list(candidates_by_region_and_name.get((oblast_ua, row["hromada_norm"]), []))
+        candidate_counts.append(len(candidates))
+        if not candidates:
+            geo_ids.append(None)
+            statuses.append("name_not_found")
+            continue
+
+        narrowed = candidates
+        raion_key = normalize_raion(row.get(COL_RAION))
+        if raion_key:
+            by_raion = [f for f in narrowed if f["properties"]["raion_key"] == raion_key]
+            if by_raion:
+                narrowed = by_raion
+
+        hromada_type = detect_hromada_type_from_row(row)
+        if hromada_type:
+            by_type = [f for f in narrowed if f["properties"]["hromada_type"] == hromada_type]
+            if by_type:
+                narrowed = by_type
+
+        if len(narrowed) == 1:
+            geo_ids.append(narrowed[0]["properties"]["geo_id"])
+            statuses.append("matched")
+        else:
+            geo_ids.append(None)
+            statuses.append("ambiguous")
+
+    resolved = df.copy()
+    resolved["_geo_id"] = geo_ids
+    resolved["_match_status"] = statuses
+    resolved["_match_candidate_count"] = candidate_counts
+    return resolved
 
 
 def is_filled(value) -> bool:
@@ -484,22 +670,22 @@ def format_ownership_str(counts: dict, lang: str) -> str:
 
 
 def compute_hromada_stats(df: pd.DataFrame) -> pd.DataFrame:
-    """Групує заклади за hromada_norm. Не кешована навмисно: викликається і на
+    """Групує зіставлені заклади за унікальним geo_id. Не кешована навмисно: викликається і на
 
     повному df (через aggregate_providers нижче — кешовано, важкий шлях), і на
     інтерактивно відфільтрованому df (форма власності/НСЗУ у сайдбарі — тут
     кешування не дало б користі, бо вхід міняється щовидгету, а групування
     ~5600 рядків саме по собі займає одиниці мілісекунд).
     """
-    columns = ["norm_key", "total", "medical", "social", "ownership_counts", "oblasts", "raions"]
+    columns = ["geo_id", "total", "medical", "social", "ownership_counts", "oblasts", "raions"]
     if df.empty:
         # Порожній вхід (наприклад, фільтри в сайдбарі відсікли всі заклади) —
         # повертаємо DataFrame з правильними колонками, а не порожній без жодної,
-        # інакше .set_index("norm_key") нижче по коду впаде з KeyError.
+        # інакше .set_index("geo_id") нижче по коду впаде з KeyError.
         return pd.DataFrame(columns=columns)
 
     records = []
-    for norm_key, group in df.groupby("hromada_norm"):
+    for geo_id, group in df.dropna(subset=["_geo_id"]).groupby("_geo_id"):
         total = len(group)
         medical = int(group["_is_medical"].sum())
         social = total - medical
@@ -510,7 +696,7 @@ def compute_hromada_stats(df: pd.DataFrame) -> pd.DataFrame:
         raions = "; ".join(sorted(group["Raion"].dropna().astype(str).str.strip().unique()))
         records.append(
             {
-                "norm_key": norm_key,
+                "geo_id": geo_id,
                 "total": total,
                 "medical": medical,
                 "social": social,
@@ -528,38 +714,46 @@ def aggregate_providers(df: pd.DataFrame) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def log_mapping_impact(df: pd.DataFrame, geo: dict) -> None:
-    """Друкує в консоль ефект словника винятків CITY_TO_HROMADA_MAPPING.
-
-    Кешовано через st.cache_data, тому виконується (і друкує) лише один раз
-    для конкретних df/geo, а не на кожен st.rerun() від перемикачів у UI.
-    """
-    geo_keys = {f["properties"]["norm_key"] for f in geo["features"]}
-    before_unmatched = int((~df["hromada_norm_baseline"].isin(geo_keys)).sum())
-    after_unmatched = int((~df["hromada_norm"].isin(geo_keys)).sum())
+def log_mapping_impact(df: pd.DataFrame) -> None:
+    """Друкує підсумок однозначного географічного зіставлення."""
     total = len(df)
+    counts = df["_match_status"].value_counts().to_dict()
+    matched = int(counts.get("matched", 0))
 
     print("=" * 60)
-    print("[CITY_TO_HROMADA_MAPPING] Ефект словника винятків")
+    print("[GEOGRAPHY MATCHING] Підсумок")
     print(f"  Усього рядків закладів: {total}")
-    print(f"  Незматчено ДО словника:   {before_unmatched} ({before_unmatched / total:.1%})")
-    print(f"  Незматчено ПІСЛЯ словника: {after_unmatched} ({after_unmatched / total:.1%})")
-    print(f"  Довиправлено рядків: {before_unmatched - after_unmatched}")
+    print(f"  Однозначно зіставлено: {matched} ({matched / total:.1%})")
+    for status in ("name_not_found", "ambiguous", "unknown_oblast"):
+        print(f"  {status}: {int(counts.get(status, 0))}")
     print("=" * 60)
 
 
 @st.cache_data(show_spinner=False)
-def find_unmatched(geo: dict, agg: pd.DataFrame) -> pd.DataFrame:
-    """Громади з Excel, для яких немає жодного полігону в GeoJSON.
+def find_unmatched(df: pd.DataFrame) -> pd.DataFrame:
+    """Агрегує рядки, які не вдалося однозначно зіставити з GeoJSON."""
+    unmatched_df = df[df["_geo_id"].isna()]
+    columns = ["norm_key", "match_status", "total", "medical", "social", "ownership_counts", "oblasts", "raions"]
+    if unmatched_df.empty:
+        return pd.DataFrame(columns=columns)
 
-    Більше не мутує geo (раніше writing total/medical/social напряму в
-    properties тут створювало "застиглі" непрофільтровані цифри — build_map
-    тепер сам щоразу свіжо пише ці властивості з переданого agg, включно з
-    відфільтрованим за формою власності/НСЗУ, тож тут лишається тільки
-    обчислення unmatched).
-    """
-    geo_keys = {f["properties"]["norm_key"] for f in geo["features"]}
-    return agg[~agg["norm_key"].isin(geo_keys)].sort_values("total", ascending=False)
+    records = []
+    for (norm_key, match_status), group in unmatched_df.groupby(["hromada_norm", "_match_status"]):
+        total = len(group)
+        medical = int(group["_is_medical"].sum())
+        records.append(
+            {
+                "norm_key": norm_key,
+                "match_status": match_status,
+                "total": total,
+                "medical": medical,
+                "social": total - medical,
+                "ownership_counts": group["_ownership_key"].value_counts().to_dict(),
+                "oblasts": "; ".join(sorted(group[COL_OBLAST].dropna().astype(str).str.strip().unique())),
+                "raions": "; ".join(sorted(group[COL_RAION].dropna().astype(str).str.strip().unique())),
+            }
+        )
+    return pd.DataFrame(records, columns=columns).sort_values("total", ascending=False)
 
 
 def polygon_ring_centroid(ring: list) -> tuple[float, float, float]:
@@ -679,15 +873,15 @@ def geocode_facilities(df: pd.DataFrame, geo: dict) -> pd.DataFrame:
     """
     centroids: dict[str, tuple[float, float, float]] = {}
     for feature in geo["features"]:
-        key = feature["properties"]["norm_key"]
+        key = feature["properties"]["geo_id"]
         result = geometry_centroid_and_extent(feature["geometry"])
         if result is not None:
             centroids[key] = result
 
     lats: list[float | None] = []
     lons: list[float | None] = []
-    for idx, hromada_norm in df["hromada_norm"].items():
-        center = centroids.get(hromada_norm)
+    for idx, geo_id in df["_geo_id"].items():
+        center = centroids.get(geo_id)
         if center is None:
             lats.append(None)
             lons.append(None)
@@ -717,10 +911,11 @@ def prepare_data(excel_path: str, geojson_path: str) -> tuple[pd.DataFrame, dict
     """
     df = load_excel_data(excel_path)
     geo = load_geojson(geojson_path)
-    log_mapping_impact(df, geo)
+    df = resolve_facility_geography(df, geo)
+    log_mapping_impact(df)
     df = geocode_facilities(df, geo)
     agg = aggregate_providers(df)
-    unmatched = find_unmatched(geo, agg)
+    unmatched = find_unmatched(df)
     return df, geo, agg, unmatched
 
 
@@ -756,7 +951,7 @@ def new_base_map() -> folium.Map:
     return folium.Map(location=UKRAINE_CENTER, zoom_start=6, tiles="OpenStreetMap")
 
 
-def _apply_focus_and_highlight(m: folium.Map, geo: dict, selected_hromada_key: str | None, lang: str, ui: dict) -> None:
+def _apply_focus_and_highlight(m: folium.Map, geo: dict, selected_geo_id: str | None, lang: str, ui: dict) -> None:
     """Спільна для обох режимів карти логіка фокусу/підсвітки.
 
     Без обраної громади — фокус (fit_bounds) на всі фічі geo (тобто на область,
@@ -764,11 +959,11 @@ def _apply_focus_and_highlight(m: folium.Map, geo: dict, selected_hromada_key: s
     громадою — фокус лише на неї + товстий контурний оверлей акцентного кольору
     поверх решти шарів.
     """
-    if selected_hromada_key is None:
+    if selected_geo_id is None:
         fit_map_to_bounds(m, union_bounds(geo["features"]))
         return
 
-    target = next((f for f in geo["features"] if f["properties"]["norm_key"] == selected_hromada_key), None)
+    target = next((f for f in geo["features"] if f["properties"]["geo_id"] == selected_geo_id), None)
     if target is None:
         fit_map_to_bounds(m, union_bounds(geo["features"]))
         return
@@ -791,7 +986,7 @@ def _apply_focus_and_highlight(m: folium.Map, geo: dict, selected_hromada_key: s
 
 
 def build_polygon_map(
-    geo: dict, agg: pd.DataFrame, lang: str, ui: dict, selected_hromada_key: str | None = None
+    geo: dict, agg: pd.DataFrame, lang: str, ui: dict, selected_geo_id: str | None = None
 ) -> folium.Map:
     """Режим 1: хороплет громад за кількістю закладів + тултип зі статистикою.
 
@@ -806,10 +1001,10 @@ def build_polygon_map(
     # за формою власності/НСЗУ) у properties полігонів — без мутації кешованого
     # geo, тож функція лишається дешевою і безпечною для повторних викликів.
     name_field = "hromada_ua" if lang == "uk" else "hromada_en"
-    stats_by_key = agg.set_index("norm_key").to_dict("index")
+    stats_by_key = agg.set_index("geo_id").to_dict("index")
     for feature in geo["features"]:
         props = feature["properties"]
-        stats = stats_by_key.get(props["norm_key"], {"total": 0, "medical": 0, "social": 0, "ownership_counts": {}})
+        stats = stats_by_key.get(props["geo_id"], {"total": 0, "medical": 0, "social": 0, "ownership_counts": {}})
         props["total"] = int(stats["total"])
         props["medical"] = int(stats["medical"])
         props["social"] = int(stats["social"])
@@ -818,8 +1013,8 @@ def build_polygon_map(
     choropleth = folium.Choropleth(
         geo_data=geo,
         data=agg,
-        columns=["norm_key", "total"],
-        key_on="feature.properties.norm_key",
+        columns=["geo_id", "total"],
+        key_on="feature.properties.geo_id",
         fill_color="YlOrRd",
         fill_opacity=0.75,
         line_opacity=0.3,
@@ -842,7 +1037,7 @@ def build_polygon_map(
         )
     )
 
-    _apply_focus_and_highlight(m, geo, selected_hromada_key, lang, ui)
+    _apply_focus_and_highlight(m, geo, selected_geo_id, lang, ui)
 
     folium.LayerControl().add_to(m)
     return m
@@ -873,7 +1068,7 @@ def build_points_map(
     geo_view: dict,
     lang: str,
     ui: dict,
-    selected_hromada_key: str | None = None,
+    selected_geo_id: str | None = None,
     show_boundaries: bool = True,
 ) -> folium.Map:
     """Режим 2: точки окремих закладів, кольорові за формою власності.
@@ -914,7 +1109,7 @@ def build_points_map(
 
     FastMarkerCluster(data=rows, callback=FAST_CLUSTER_CALLBACK, name=ui["layer_points"]).add_to(m)
 
-    _apply_focus_and_highlight(m, geo_view, selected_hromada_key, lang, ui)
+    _apply_focus_and_highlight(m, geo_view, selected_geo_id, lang, ui)
 
     m.get_root().html.add_child(folium.Element(build_ownership_legend_html(ui)))
     folium.LayerControl().add_to(m)
@@ -951,7 +1146,7 @@ def main() -> None:
     else:
         features = [f for f in geo["features"] if f["properties"]["oblast_ua"] == selected_oblast]
     geo_view = {"type": "FeatureCollection", "features": features}
-    keys_in_view = {f["properties"]["norm_key"] for f in features}
+    geo_ids_in_view = {f["properties"]["geo_id"] for f in features}
 
     # --- Фільтри форми власності та пакету НСЗУ ---
     observed_ownership_keys = set(df["_ownership_key"].unique())
@@ -972,7 +1167,7 @@ def main() -> None:
         horizontal=True,
     )
 
-    df_scope = df[df["hromada_norm"].isin(keys_in_view)]
+    df_scope = df[df["_geo_id"].isin(geo_ids_in_view)]
     df_filtered = df_scope[df_scope["_ownership_key"].isin(selected_ownership_keys)]
     if nhsu_filter == "yes":
         df_filtered = df_filtered[df_filtered["_is_medical"]]
@@ -995,18 +1190,18 @@ def main() -> None:
     # фільтром області вище (features вже відфільтровані за оболастю).
     # Це суто географічний вибір, тому не залежить від фільтрів власності/НСЗУ.
     name_field = "hromada_ua" if lang == "uk" else "hromada_en"
-    hromada_display_by_key = {f["properties"]["norm_key"]: f["properties"][name_field] for f in features}
-    selected_hromada_key = st.sidebar.selectbox(
+    hromada_display_by_key = {f["properties"]["geo_id"]: f["properties"][name_field] for f in features}
+    selected_geo_id = st.sidebar.selectbox(
         ui["hromada_select_label"],
         options=[NO_HROMADA_SELECTED] + sorted(hromada_display_by_key, key=lambda k: hromada_display_by_key[k]),
         format_func=lambda k: ui["hromada_select_placeholder"] if k is NO_HROMADA_SELECTED else hromada_display_by_key[k],
     )
 
-    if selected_hromada_key is not NO_HROMADA_SELECTED:
-        hromada_display_name = hromada_display_by_key[selected_hromada_key]
+    if selected_geo_id is not NO_HROMADA_SELECTED:
+        hromada_display_name = hromada_display_by_key[selected_geo_id]
         # Список закладів відповідає активним фільтрам власності/НСЗУ, щоб не
         # суперечити тому, що показано на карті.
-        facility_rows = df_filtered[df_filtered["hromada_norm"] == selected_hromada_key]
+        facility_rows = df_filtered[df_filtered["_geo_id"] == selected_geo_id]
         with st.sidebar.expander(f"{ui['hromada_detail_header']}: {hromada_display_name}", expanded=True):
             if facility_rows.empty:
                 st.caption(ui["no_facilities_matched"])
@@ -1079,9 +1274,9 @@ def main() -> None:
         show_boundaries = boundaries_col.checkbox(ui["show_boundaries_label"], value=True)
 
         if view_mode == "polygons":
-            m = build_polygon_map(geo_view, agg_view, lang, ui, selected_hromada_key)
+            m = build_polygon_map(geo_view, agg_view, lang, ui, selected_geo_id)
         else:
-            m = build_points_map(df_filtered, geo_view, lang, ui, selected_hromada_key, show_boundaries)
+            m = build_points_map(df_filtered, geo_view, lang, ui, selected_geo_id, show_boundaries)
         st_folium(m, width=None, height=700, returned_objects=[])
 
     with tab2:
