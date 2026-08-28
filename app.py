@@ -4,6 +4,7 @@ import html
 import json
 import math
 import random
+import re
 from pathlib import Path
 
 import folium
@@ -55,6 +56,18 @@ OWNERSHIP_COLOR = {
 }
 # Порядок опцій у мультиселекті форми власності в сайдбарі.
 OWNERSHIP_LABEL_KEYS_ORDER = ["public", "communal", "private", "ngo-charitable", "donor", "mixed", UNSPECIFIED_KEY]
+
+OWNERSHIP_ALIASES = {
+    "public": "public",
+    "communal": "communal",
+    "communal (hromada)": "communal",
+    "private": "private",
+    "ngo-charitable": "ngo-charitable",
+    "ngo/charitable": "ngo-charitable",
+    "ngo/charity": "ngo-charitable",
+    "donor": "donor",
+    "mixed": "mixed",
+}
 
 # Excel часто записує обласні/великі районні центри іменниковою формою міста
 # ("Kharkiv"), а не прикметниковою формою громади ("Харківська"), тому
@@ -447,7 +460,10 @@ def is_filled(value) -> bool:
 def canonical_ownership_key(value) -> str:
     if pd.isna(value) or str(value).strip() == "":
         return UNSPECIFIED_KEY
-    return str(value).strip().lower()
+    normalized = re.sub(r"\s+", " ", str(value).strip().lower())
+    normalized = re.sub(r"\s*/\s*", "/", normalized)
+    normalized = re.sub(r"\s*-\s*", "-", normalized)
+    return OWNERSHIP_ALIASES.get(normalized, normalized)
 
 
 def ownership_label_for_value(value, lang: str) -> str:
@@ -938,12 +954,16 @@ def main() -> None:
     keys_in_view = {f["properties"]["norm_key"] for f in features}
 
     # --- Фільтри форми власності та пакету НСЗУ ---
-    ownership_options = list(OWNERSHIP_LABEL_KEYS_ORDER)
+    observed_ownership_keys = set(df["_ownership_key"].unique())
+    ownership_options = [key for key in OWNERSHIP_LABEL_KEYS_ORDER if key in observed_ownership_keys]
+    ownership_options.extend(sorted(observed_ownership_keys - set(ownership_options)))
     selected_ownership_keys = st.sidebar.multiselect(
         ui["ownership_filter_label"],
         options=ownership_options,
         default=ownership_options,
-        format_func=lambda k: UI_TEXTS[lang]["not_specified"] if k == UNSPECIFIED_KEY else ui["ownership_labels"][k],
+        format_func=lambda k: UI_TEXTS[lang]["not_specified"]
+        if k == UNSPECIFIED_KEY
+        else ui["ownership_labels"].get(k, k.title()),
     )
     nhsu_filter = st.sidebar.radio(
         ui["nhsu_filter_label"],
