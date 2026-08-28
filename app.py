@@ -138,6 +138,9 @@ UI_TEXTS = {
         "legend_unspecified": "Не вказано",
         "tab_map": "🗺️ Карта громад",
         "tab_data": "📊 Сирі дані (Таблиця)",
+        "view_mode_label": "Режим карти",
+        "view_mode_polygons": "🗺️ Карта громад (полігони)",
+        "view_mode_points": "📍 Карта точок (надавачі послуг)",
         "kpi_total": "Загальна кількість закладів",
         "kpi_medical": "Медичні заклади",
         "kpi_social": "Соціальні заклади",
@@ -220,6 +223,9 @@ UI_TEXTS = {
         "legend_unspecified": "Not specified",
         "tab_map": "🗺️ Hromada Map",
         "tab_data": "📊 Raw Data (Table)",
+        "view_mode_label": "Map view",
+        "view_mode_polygons": "🗺️ Hromada map (polygons)",
+        "view_mode_points": "📍 Points map (service providers)",
         "kpi_total": "Total facilities",
         "kpi_medical": "Medical facilities",
         "kpi_social": "Social facilities",
@@ -632,14 +638,24 @@ def build_ownership_legend_html(ui: dict) -> str:
     )
 
 
-def build_map(geo: dict, agg: pd.DataFrame, facility_df: pd.DataFrame, lang: str, ui: dict) -> folium.Map:
+UKRAINE_CENTER = [48.3794, 31.1656]
+
+
+def new_base_map() -> folium.Map:
     # OpenStreetMap — безкоштовний тайл без API-ключа (CartoDB positron вимагав
-    # ключ і показував водяний знак "API key required").
-    m = folium.Map(location=[48.3794, 31.1656], zoom_start=6, tiles="OpenStreetMap")
+    # ключ і показував водяний знак "API key required"). Використовується для
+    # ОБОХ режимів карти (полігони і точки), щоб водяний знак не повернувся
+    # десь одним випадковим забутим tiles=.
+    return folium.Map(location=UKRAINE_CENTER, zoom_start=6, tiles="OpenStreetMap")
+
+
+def build_polygon_map(geo: dict, agg: pd.DataFrame, lang: str, ui: dict) -> folium.Map:
+    """Режим 1: хороплет громад за кількістю закладів + тултип зі статистикою."""
+    m = new_base_map()
 
     # Свіжий per-render мердж статистики (agg тут може бути вже відфільтрованим
     # за формою власності/НСЗУ) у properties полігонів — без мутації кешованого
-    # geo, тож build_map лишається дешевим і безпечним для повторних викликів.
+    # geo, тож функція лишається дешевою і безпечною для повторних викликів.
     name_field = "hromada_ua" if lang == "uk" else "hromada_en"
     stats_by_key = agg.set_index("norm_key").to_dict("index")
     for feature in geo["features"]:
@@ -677,7 +693,14 @@ def build_map(geo: dict, agg: pd.DataFrame, facility_df: pd.DataFrame, lang: str
         )
     )
 
-    # --- Точковий шар (окремі заклади) ---
+    folium.LayerControl().add_to(m)
+    return m
+
+
+def build_points_map(facility_df: pd.DataFrame, lang: str, ui: dict) -> folium.Map:
+    """Режим 2: точки окремих закладів, кольорові за формою власності."""
+    m = new_base_map()
+
     # MarkerCluster — бо закладів може бути кілька тисяч, і без кластеризації
     # карта стає непридатною для використання (тисячі маркерів одночасно).
     points_layer = MarkerCluster(name=ui["layer_points"])
@@ -809,7 +832,16 @@ def main() -> None:
         col3.metric(ui["kpi_social"], int(agg_view["social"].sum()) if not agg_view.empty else 0)
         col4.metric(ui["kpi_hromadas"], int((agg_view["total"] > 0).sum()) if not agg_view.empty else 0)
 
-        m = build_map(geo_view, agg_view, df_filtered, lang, ui)
+        view_mode = st.radio(
+            ui["view_mode_label"],
+            options=["polygons", "points"],
+            format_func=lambda v: ui["view_mode_polygons"] if v == "polygons" else ui["view_mode_points"],
+            horizontal=True,
+        )
+        if view_mode == "polygons":
+            m = build_polygon_map(geo_view, agg_view, lang, ui)
+        else:
+            m = build_points_map(df_filtered, lang, ui)
         st_folium(m, width=None, height=700, returned_objects=[])
 
     with tab2:
