@@ -29,3 +29,6 @@ desktop.ini
 
 # Logs
 *.log
+
+# Coding-agent runtime/tooling artifacts
+.codex-audit/

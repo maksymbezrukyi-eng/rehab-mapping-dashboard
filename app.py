@@ -39,6 +39,9 @@ TRANSLIT_MID = {"є": "ie", "ї": "i", "й": "i", "ю": "iu", "я": "ia"}
 UNSPECIFIED_KEY = "_unspecified"
 ALL_OBLASTS = None  # сентинель "усі області" для селектора
 NO_HROMADA_SELECTED = None  # сентинель "громаду не обрано" для селектора
+NO_PROVIDER_SELECTED = None  # сентинель "надавача не обрано" для селектора
+
+HIGHLIGHT_COLOR = "#e11d48"  # акцентний колір контуру обраної громади (відмінний від YlOrRd і від кольорів форми власності)
 
 # Колір точки на карті за формою власності (3 кольори + сірий для невказаних).
 OWNERSHIP_COLOR = {
@@ -122,6 +125,30 @@ UI_TEXTS = {
         "facility_social_tag": "🤝 Соціальний",
         "no_facilities_matched": "Немає зіставлених закладів у базі для цієї громади.",
         "facility_name_fallback": "Без назви",
+        "oblast_stats_header": "📊 Статистика по області",
+        "oblast_stats_hromadas": "Громад із закладами",
+        "oblast_stats_total": "Усього закладів",
+        "oblast_stats_medical": "Медичних",
+        "oblast_stats_social": "Соціальних",
+        "provider_select_label": "Оберіть надавача",
+        "provider_select_placeholder": "— не обрано —",
+        "provider_card_header": "🏷️ Картка надавача",
+        "provider_card_address": "Адреса",
+        "provider_card_oblast": "Область",
+        "provider_card_raion": "Район",
+        "provider_card_hromada": "Громада",
+        "provider_card_ownership": "Форма власності",
+        "provider_card_nhsu": "Пакет НСЗУ",
+        "provider_card_service_format": "Формат надання послуг",
+        "provider_card_target_population": "Цільова група",
+        "provider_card_focus": "Основний напрям реабілітації",
+        "provider_card_mdt": "МДК (мультидисциплінарна команда)",
+        "provider_card_staff": "Ключові фахівці",
+        "provider_card_volume": "Обсяг (пацієнтів/рік)",
+        "show_boundaries_label": "Показувати межі громад",
+        "layer_boundaries": "Межі громад",
+        "layer_highlight": "Обрана громада",
+        "selected_hromada_caption": "🔴 Обрана громада: {name}",
         "ownership_filter_label": "Форма власності",
         "nhsu_filter_label": "Пакет НСЗУ",
         "nhsu_filter_all": "Усі",
@@ -207,6 +234,30 @@ UI_TEXTS = {
         "facility_social_tag": "🤝 Social",
         "no_facilities_matched": "No matched facilities in the database for this hromada.",
         "facility_name_fallback": "Unnamed",
+        "oblast_stats_header": "📊 Oblast statistics",
+        "oblast_stats_hromadas": "Hromadas with facilities",
+        "oblast_stats_total": "Total facilities",
+        "oblast_stats_medical": "Medical",
+        "oblast_stats_social": "Social",
+        "provider_select_label": "Select provider",
+        "provider_select_placeholder": "— none selected —",
+        "provider_card_header": "🏷️ Provider card",
+        "provider_card_address": "Address",
+        "provider_card_oblast": "Oblast",
+        "provider_card_raion": "Raion",
+        "provider_card_hromada": "Hromada",
+        "provider_card_ownership": "Ownership type",
+        "provider_card_nhsu": "NHSU package",
+        "provider_card_service_format": "Service format",
+        "provider_card_target_population": "Target population",
+        "provider_card_focus": "Primary rehabilitation focus",
+        "provider_card_mdt": "MDT (multidisciplinary team)",
+        "provider_card_staff": "Key professionals",
+        "provider_card_volume": "Volume (patients/year)",
+        "show_boundaries_label": "Show hromada boundaries",
+        "layer_boundaries": "Hromada boundaries",
+        "layer_highlight": "Selected hromada",
+        "selected_hromada_caption": "🔴 Selected hromada: {name}",
         "ownership_filter_label": "Ownership type",
         "nhsu_filter_label": "NHSU package",
         "nhsu_filter_all": "All",
@@ -552,6 +603,46 @@ def geometry_centroid_and_extent(geometry: dict) -> tuple[float, float, float] |
     return centroid_lon, centroid_lat, extent
 
 
+def geometry_bounds(geometry: dict) -> tuple[float, float, float, float] | None:
+    """(min_lon, min_lat, max_lon, max_lat) для Polygon/MultiPolygon — для fit_bounds()."""
+    gtype = geometry.get("type")
+    if gtype == "Polygon":
+        polygons = [geometry["coordinates"]]
+    elif gtype == "MultiPolygon":
+        polygons = geometry["coordinates"]
+    else:
+        return None
+
+    lons, lats = [], []
+    for poly in polygons:
+        if not poly:
+            continue
+        lons.extend(p[0] for p in poly[0])
+        lats.extend(p[1] for p in poly[0])
+    if not lons:
+        return None
+    return min(lons), min(lats), max(lons), max(lats)
+
+
+def union_bounds(features: list) -> tuple[float, float, float, float] | None:
+    """Об'єднані межі кількох фіч — для фокусування карти на цілій області."""
+    all_bounds = [b for b in (geometry_bounds(f["geometry"]) for f in features) if b is not None]
+    if not all_bounds:
+        return None
+    return (
+        min(b[0] for b in all_bounds),
+        min(b[1] for b in all_bounds),
+        max(b[2] for b in all_bounds),
+        max(b[3] for b in all_bounds),
+    )
+
+
+def fit_map_to_bounds(m: folium.Map, bounds: tuple[float, float, float, float] | None) -> None:
+    if bounds is not None:
+        min_lon, min_lat, max_lon, max_lat = bounds
+        m.fit_bounds([[min_lat, min_lon], [max_lat, max_lon]])
+
+
 def jitter_point(lon: float, lat: float, extent: float, seed: int) -> tuple[float, float]:
     """Невеликий випадковий (але детермінований за seed) зсув точки навколо центру
     громади, щоб заклади в одній громаді не накладались один на одного."""
@@ -649,8 +740,50 @@ def new_base_map() -> folium.Map:
     return folium.Map(location=UKRAINE_CENTER, zoom_start=6, tiles="OpenStreetMap")
 
 
-def build_polygon_map(geo: dict, agg: pd.DataFrame, lang: str, ui: dict) -> folium.Map:
-    """Режим 1: хороплет громад за кількістю закладів + тултип зі статистикою."""
+def _apply_focus_and_highlight(m: folium.Map, geo: dict, selected_hromada_key: str | None, lang: str, ui: dict) -> None:
+    """Спільна для обох режимів карти логіка фокусу/підсвітки.
+
+    Без обраної громади — фокус (fit_bounds) на всі фічі geo (тобто на область,
+    якщо вона обрана у сайдбарі, або на всю Україну, якщо ні). З обраною
+    громадою — фокус лише на неї + товстий контурний оверлей акцентного кольору
+    поверх решти шарів.
+    """
+    if selected_hromada_key is None:
+        fit_map_to_bounds(m, union_bounds(geo["features"]))
+        return
+
+    target = next((f for f in geo["features"] if f["properties"]["norm_key"] == selected_hromada_key), None)
+    if target is None:
+        fit_map_to_bounds(m, union_bounds(geo["features"]))
+        return
+
+    fit_map_to_bounds(m, geometry_bounds(target["geometry"]))
+    folium.GeoJson(
+        {"type": "FeatureCollection", "features": [target]},
+        style_function=lambda _: {"fillOpacity": 0, "color": HIGHLIGHT_COLOR, "weight": 4},
+        control=False,
+    ).add_to(m)
+    name_field = "hromada_ua" if lang == "uk" else "hromada_en"
+    caption = ui["selected_hromada_caption"].format(name=target["properties"][name_field])
+    caption_html = (
+        '<div style="position: fixed; top: 80px; left: 10px; z-index: 9999; '
+        'background: white; color: #111; padding: 6px 12px; border-radius: 6px; '
+        'box-shadow: 0 1px 4px rgba(0,0,0,0.35); font-size: 13px;">'
+        f"{html.escape(caption)}</div>"
+    )
+    m.get_root().html.add_child(folium.Element(caption_html))
+
+
+def build_polygon_map(
+    geo: dict, agg: pd.DataFrame, lang: str, ui: dict, selected_hromada_key: str | None = None
+) -> folium.Map:
+    """Режим 1: хороплет громад за кількістю закладів + тултип зі статистикою.
+
+    Якщо обрано конкретну громаду (з каскадного селектора в сайдбарі) — карта
+    фокусується на ній (fit_bounds) і додає окремий контурний шар поверх
+    хороплету (товща лінія акцентного кольору), бо стилізувати єдину фічу
+    всередині вбудованого folium.Choropleth напряму неможливо.
+    """
     m = new_base_map()
 
     # Свіжий per-render мердж статистики (agg тут може бути вже відфільтрованим
@@ -693,6 +826,8 @@ def build_polygon_map(geo: dict, agg: pd.DataFrame, lang: str, ui: dict) -> foli
         )
     )
 
+    _apply_focus_and_highlight(m, geo, selected_hromada_key, lang, ui)
+
     folium.LayerControl().add_to(m)
     return m
 
@@ -717,16 +852,32 @@ function (row) {
 """
 
 
-def build_points_map(facility_df: pd.DataFrame, lang: str, ui: dict) -> folium.Map:
+def build_points_map(
+    facility_df: pd.DataFrame,
+    geo_view: dict,
+    lang: str,
+    ui: dict,
+    selected_hromada_key: str | None = None,
+    show_boundaries: bool = True,
+) -> folium.Map:
     """Режим 2: точки окремих закладів, кольорові за формою власності.
 
-    FastMarkerCluster замість MarkerCluster: MarkerCluster все одно створює
-    Python-об'єкт CircleMarker+Popup на кожен із ~5000 закладів і серіалізує
-    їх повністю в HTML (сторінка виходила ~6+ МБ) — саме це "вішало" браузер
-    ще до того, як спрацьовувала кластеризація. FastMarkerCluster передає лише
-    компактний масив даних і будує маркери в браузері одним JS-колбеком.
+    FastMarkerCluster, а не folium.plugins.MarkerCluster: останній все одно
+    створює Python-об'єкт CircleMarker+Popup на кожен із ~5000 закладів і
+    серіалізує їх повністю в HTML (сторінка виходила ~6+ МБ) — саме це
+    "вішало" браузер ще до того, як спрацьовувала кластеризація (перевірено
+    емпірично на цьому ж датасеті). FastMarkerCluster передає лише компактний
+    масив даних і будує маркери в браузері одним спільним JS-колбеком.
     """
     m = new_base_map()
+
+    if show_boundaries and geo_view["features"]:
+        folium.GeoJson(
+            geo_view,
+            style_function=lambda _: {"fillOpacity": 0, "color": "#94a3b8", "weight": 1},
+            name=ui["layer_boundaries"],
+            control=False,
+        ).add_to(m)
 
     rows = []
     for _, row in facility_df.iterrows():
@@ -746,6 +897,8 @@ def build_points_map(facility_df: pd.DataFrame, lang: str, ui: dict) -> folium.M
         rows.append([float(row["lat"]), float(row["lon"]), color, popup_html])
 
     FastMarkerCluster(data=rows, callback=FAST_CLUSTER_CALLBACK, name=ui["layer_points"]).add_to(m)
+
+    _apply_focus_and_highlight(m, geo_view, selected_hromada_key, lang, ui)
 
     m.get_root().html.add_child(folium.Element(build_ownership_legend_html(ui)))
     folium.LayerControl().add_to(m)
@@ -808,6 +961,16 @@ def main() -> None:
 
     agg_view = compute_hromada_stats(df_filtered)
 
+    # --- Зведена статистика по обраній області (лише коли область конкретна) ---
+    if selected_oblast is not ALL_OBLASTS:
+        with st.sidebar.container(border=True):
+            st.markdown(f"**{ui['oblast_stats_header']}**")
+            st.caption(oblast_display[selected_oblast])
+            st.markdown(f"{ui['oblast_stats_hromadas']}: **{int((agg_view['total'] > 0).sum()) if not agg_view.empty else 0}**")
+            st.markdown(f"{ui['oblast_stats_total']}: **{int(agg_view['total'].sum()) if not agg_view.empty else 0}**")
+            st.markdown(f"{ui['oblast_stats_medical']}: **{int(agg_view['medical'].sum()) if not agg_view.empty else 0}**")
+            st.markdown(f"{ui['oblast_stats_social']}: **{int(agg_view['social'].sum()) if not agg_view.empty else 0}**")
+
     # Список громад для випадаючого списку — каскадно звужується разом з
     # фільтром області вище (features вже відфільтровані за оболастю).
     # Це суто географічний вибір, тому не залежить від фільтрів власності/НСЗУ.
@@ -840,6 +1003,43 @@ def main() -> None:
                         tag = ui["facility_social_tag"]
                     st.markdown(f"- **{name}** — {ownership} · {tag}")
 
+        # --- Вибір конкретного надавача в межах обраної громади ---
+        provider_display_by_idx = {
+            idx: (
+                f"{str(row[COL_PROVIDER_NAME]).strip() if is_filled(row[COL_PROVIDER_NAME]) else ui['facility_name_fallback']}"
+            )
+            for idx, row in facility_rows.iterrows()
+        }
+        selected_provider_idx = st.sidebar.selectbox(
+            ui["provider_select_label"],
+            options=[NO_PROVIDER_SELECTED] + list(provider_display_by_idx),
+            format_func=lambda idx: ui["provider_select_placeholder"]
+            if idx is NO_PROVIDER_SELECTED
+            else provider_display_by_idx[idx],
+        )
+        if selected_provider_idx is not NO_PROVIDER_SELECTED:
+            provider = facility_rows.loc[selected_provider_idx]
+            provider_name = provider_display_by_idx[selected_provider_idx]
+
+            def _field(value) -> str:
+                return str(value).strip() if is_filled(value) else ui["not_specified"]
+
+            with st.sidebar.container(border=True):
+                st.markdown(f"**{ui['provider_card_header']}**")
+                st.markdown(f"**{provider_name}**")
+                st.markdown(f"{ui['provider_card_address']}: {_field(provider['Address'])}")
+                st.markdown(f"{ui['provider_card_oblast']}: {_field(provider['Oblast'])}")
+                st.markdown(f"{ui['provider_card_raion']}: {_field(provider['Raion'])}")
+                st.markdown(f"{ui['provider_card_hromada']}: {_field(provider[COL_HROMADA])}")
+                st.markdown(f"{ui['provider_card_ownership']}: {ownership_label_for_value(provider[COL_OWNERSHIP], lang)}")
+                st.markdown(f"{ui['provider_card_nhsu']}: {_field(provider[COL_NHSU])}")
+                st.markdown(f"{ui['provider_card_service_format']}: {_field(provider.get('Service format (inpatient/outpatient/home/day care)'))}")
+                st.markdown(f"{ui['provider_card_target_population']}: {_field(provider.get('Target population (0-3 / 3-18 / other)'))}")
+                st.markdown(f"{ui['provider_card_focus']}: {_field(provider.get('Primary rehabilitation focus'))}")
+                st.markdown(f"{ui['provider_card_mdt']}: {_field(provider.get('MDT (multidisciplinary team)'))}")
+                st.markdown(f"{ui['provider_card_staff']}: {_field(provider.get('Key professionals present'))}")
+                st.markdown(f"{ui['provider_card_volume']}: {_field(provider.get('Volume (patients/year — if available)'))}")
+
     tab1, tab2 = st.tabs([ui["tab_map"], ui["tab_data"]])
 
     with tab1:
@@ -849,16 +1049,19 @@ def main() -> None:
         col3.metric(ui["kpi_social"], int(agg_view["social"].sum()) if not agg_view.empty else 0)
         col4.metric(ui["kpi_hromadas"], int((agg_view["total"] > 0).sum()) if not agg_view.empty else 0)
 
-        view_mode = st.radio(
+        mode_col, boundaries_col = st.columns([3, 1])
+        view_mode = mode_col.radio(
             ui["view_mode_label"],
             options=["polygons", "points"],
             format_func=lambda v: ui["view_mode_polygons"] if v == "polygons" else ui["view_mode_points"],
             horizontal=True,
         )
+        show_boundaries = boundaries_col.checkbox(ui["show_boundaries_label"], value=True)
+
         if view_mode == "polygons":
-            m = build_polygon_map(geo_view, agg_view, lang, ui)
+            m = build_polygon_map(geo_view, agg_view, lang, ui, selected_hromada_key)
         else:
-            m = build_points_map(df_filtered, lang, ui)
+            m = build_points_map(df_filtered, geo_view, lang, ui, selected_hromada_key, show_boundaries)
         st_folium(m, width=None, height=700, returned_objects=[])
 
     with tab2:
