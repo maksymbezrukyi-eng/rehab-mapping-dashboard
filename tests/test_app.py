@@ -44,6 +44,7 @@ class GeographyResolutionTests(unittest.TestCase):
         source = app.load_excel_data(str(app.EXCEL_PATH))
         cls.geo = app.load_geojson(str(app.GEOJSON_PATH))
         cls.df = app.resolve_facility_geography(source, cls.geo)
+        cls.geocoded = app.geocode_facilities(cls.df, cls.geo)
         cls.features_by_id = {
             feature["properties"]["geo_id"]: feature["properties"]
             for feature in cls.geo["features"]
@@ -94,6 +95,25 @@ class GeographyResolutionTests(unittest.TestCase):
         aggregate = app.compute_hromada_stats(self.df)
         self.assertFalse(aggregate["geo_id"].duplicated().any())
         self.assertEqual(int(aggregate["total"].sum()), 5027)
+
+    def test_every_marker_is_inside_its_hromada_polygon(self):
+        geometries = {
+            feature["properties"]["geo_id"]: feature["geometry"]
+            for feature in self.geo["features"]
+        }
+        matched = self.geocoded[self.geocoded["_geo_id"].notna()]
+        outside = []
+        for index, row in matched.iterrows():
+            if not app.geometry_contains_point(
+                geometries[row["_geo_id"]], row["lon"], row["lat"]
+            ):
+                outside.append(index)
+        self.assertEqual(outside, [])
+
+    def test_unmatched_rows_do_not_receive_coordinates(self):
+        unmatched = self.geocoded[self.geocoded["_geo_id"].isna()]
+        self.assertTrue(unmatched["lat"].isna().all())
+        self.assertTrue(unmatched["lon"].isna().all())
 
 
 if __name__ == "__main__":

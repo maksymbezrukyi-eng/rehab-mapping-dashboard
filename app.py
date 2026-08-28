@@ -863,6 +863,109 @@ def geometry_centroid_and_extent(geometry: dict) -> tuple[float, float, float] |
     return centroid_lon, centroid_lat, extent
 
 
+def point_on_ring_boundary(lon: float, lat: float, ring: list, tolerance: float = 1e-10) -> bool:
+    """Перевіряє, чи лежить точка на відрізку межі кільця."""
+    for index in range(len(ring)):
+        x1, y1 = ring[index][0], ring[index][1]
+        x2, y2 = ring[(index + 1) % len(ring)][0], ring[(index + 1) % len(ring)][1]
+        cross = (lon - x1) * (y2 - y1) - (lat - y1) * (x2 - x1)
+        if abs(cross) > tolerance:
+            continue
+        if min(x1, x2) - tolerance <= lon <= max(x1, x2) + tolerance and min(y1, y2) - tolerance <= lat <= max(y1, y2) + tolerance:
+            return True
+    return False
+
+
+def point_in_ring(lon: float, lat: float, ring: list) -> bool:
+    """Ray-casting для одного кільця; його межа вважається частиною полігона."""
+    if len(ring) < 3:
+        return False
+    if point_on_ring_boundary(lon, lat, ring):
+        return True
+
+    inside = False
+    previous = len(ring) - 1
+    for current in range(len(ring)):
+        x1, y1 = ring[current][0], ring[current][1]
+        x2, y2 = ring[previous][0], ring[previous][1]
+        if (y1 > lat) != (y2 > lat):
+            intersection_x = (x2 - x1) * (lat - y1) / (y2 - y1) + x1
+            if lon < intersection_x:
+                inside = not inside
+        previous = current
+    return inside
+
+
+def point_in_polygon(lon: float, lat: float, polygon: list) -> bool:
+    if not polygon or not point_in_ring(lon, lat, polygon[0]):
+        return False
+    # Точка всередині отвору не належить полігону; межа отвору теж не є
+    # безпечною позицією для маркера, тому виключаємо її разом із внутрішністю.
+    return not any(point_in_ring(lon, lat, hole) for hole in polygon[1:])
+
+
+def geometry_contains_point(geometry: dict, lon: float, lat: float) -> bool:
+    gtype = geometry.get("type")
+    if gtype == "Polygon":
+        return point_in_polygon(lon, lat, geometry.get("coordinates", []))
+    if gtype == "MultiPolygon":
+        return any(
+            point_in_polygon(lon, lat, polygon)
+            for polygon in geometry.get("coordinates", [])
+        )
+    return False
+
+
+def geometry_interior_point(geometry: dict) -> tuple[float, float, float] | None:
+    """Повертає гарантовано внутрішню опорну точку та розмір геометрії."""
+    centroid = geometry_centroid_and_extent(geometry)
+    if centroid is None:
+        return None
+    centroid_lon, centroid_lat, extent = centroid
+    if geometry_contains_point(geometry, centroid_lon, centroid_lat):
+        return centroid
+
+    gtype = geometry.get("type")
+    polygons = [geometry["coordinates"]] if gtype == "Polygon" else geometry.get("coordinates", [])
+    polygons_by_area = sorted(
+        (polygon for polygon in polygons if polygon and polygon[0]),
+        key=lambda polygon: polygon_ring_centroid(polygon[0])[0],
+        reverse=True,
+    )
+
+    # Спершу пробуємо центроїд кожної окремої частини MultiPolygon.
+    for polygon in polygons_by_area:
+        _, lon, lat = polygon_ring_centroid(polygon[0])
+        if point_in_polygon(lon, lat, polygon):
+            return lon, lat, extent
+
+    # Для сильно увігнутих полігонів знаходимо найближчу до центроїда точку
+    # на регулярній внутрішній сітці. 25×25 достатньо для поточного GeoJSON.
+    candidates: list[tuple[float, float, float]] = []
+    for polygon in polygons_by_area:
+        exterior = polygon[0]
+        min_lon = min(point[0] for point in exterior)
+        max_lon = max(point[0] for point in exterior)
+        min_lat = min(point[1] for point in exterior)
+        max_lat = max(point[1] for point in exterior)
+        for x_index in range(25):
+            lon = min_lon + (x_index + 0.5) * (max_lon - min_lon) / 25
+            for y_index in range(25):
+                lat = min_lat + (y_index + 0.5) * (max_lat - min_lat) / 25
+                if point_in_polygon(lon, lat, polygon):
+                    distance = (lon - centroid_lon) ** 2 + (lat - centroid_lat) ** 2
+                    candidates.append((distance, lon, lat))
+    if candidates:
+        _, lon, lat = min(candidates)
+        return lon, lat, extent
+
+    # Вкрай вироджена геометрія: координата межі все одно належить полігону.
+    if polygons_by_area:
+        lon, lat = polygons_by_area[0][0][0][:2]
+        return lon, lat, extent
+    return None
+
+
 def geometry_bounds(geometry: dict) -> tuple[float, float, float, float] | None:
     """(min_lon, min_lat, max_lon, max_lat) для Polygon/MultiPolygon — для fit_bounds()."""
     gtype = geometry.get("type")
@@ -912,6 +1015,21 @@ def jitter_point(lon: float, lat: float, extent: float, seed: int) -> tuple[floa
     return lon + radius * math.cos(angle), lat + radius * math.sin(angle)
 
 
+def jitter_point_inside_geometry(
+    lon: float,
+    lat: float,
+    extent: float,
+    geometry: dict,
+    seed: int,
+) -> tuple[float, float]:
+    """Розводить маркери, але ніколи не виносить їх за межі громади."""
+    for attempt in range(48):
+        jlon, jlat = jitter_point(lon, lat, extent, seed=seed * 97 + attempt)
+        if geometry_contains_point(geometry, jlon, jlat):
+            return jlon, jlat
+    return lon, lat
+
+
 def geocode_facilities(df: pd.DataFrame, geo: dict) -> pd.DataFrame:
     """Координати закладу = центроїд полігону його громади + jitter-розкид.
 
@@ -921,23 +1039,26 @@ def geocode_facilities(df: pd.DataFrame, geo: dict) -> pd.DataFrame:
     якої немає серед полігонів (unmatched), отримують lat/lon = None і просто
     пропускаються при малюванні точок — без падіння коду.
     """
-    centroids: dict[str, tuple[float, float, float]] = {}
+    locations: dict[str, tuple[float, float, float, dict]] = {}
     for feature in geo["features"]:
         key = feature["properties"]["geo_id"]
-        result = geometry_centroid_and_extent(feature["geometry"])
+        result = geometry_interior_point(feature["geometry"])
         if result is not None:
-            centroids[key] = result
+            lon, lat, extent = result
+            locations[key] = lon, lat, extent, feature["geometry"]
 
     lats: list[float | None] = []
     lons: list[float | None] = []
     for idx, geo_id in df["_geo_id"].items():
-        center = centroids.get(geo_id)
+        center = locations.get(geo_id)
         if center is None:
             lats.append(None)
             lons.append(None)
             continue
-        lon, lat, extent = center
-        jlon, jlat = jitter_point(lon, lat, extent, seed=int(idx))
+        lon, lat, extent, geometry = center
+        jlon, jlat = jitter_point_inside_geometry(
+            lon, lat, extent, geometry, seed=int(idx)
+        )
         lats.append(jlat)
         lons.append(jlon)
 
@@ -1323,14 +1444,15 @@ def main() -> None:
         col3.metric(ui["kpi_social"], int(agg_view["social"].sum()) if not agg_view.empty else 0)
         col4.metric(ui["kpi_hromadas"], int((agg_view["total"] > 0).sum()) if not agg_view.empty else 0)
 
-        mode_col, boundaries_col = st.columns([3, 1])
-        view_mode = mode_col.radio(
+        view_mode = st.radio(
             ui["view_mode_label"],
             options=["polygons", "points"],
             format_func=lambda v: ui["view_mode_polygons"] if v == "polygons" else ui["view_mode_points"],
             horizontal=True,
         )
-        show_boundaries = boundaries_col.checkbox(ui["show_boundaries_label"], value=True)
+        show_boundaries = False
+        if view_mode == "points":
+            show_boundaries = st.checkbox(ui["show_boundaries_label"], value=False)
 
         if view_mode == "polygons":
             m = build_polygon_map(geo_view, agg_view, lang, ui, selected_geo_id)
