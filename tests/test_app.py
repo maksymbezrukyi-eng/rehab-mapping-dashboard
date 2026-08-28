@@ -37,6 +37,14 @@ class OwnershipNormalizationTests(unittest.TestCase):
         self.assertNotIn("hromada_norm", display.columns)
         self.assertNotIn("hromada_norm_baseline", display.columns)
 
+    def test_ukrainian_and_english_ui_have_the_same_keys(self):
+        uk = app.UI_TEXTS["uk"]
+        en = app.UI_TEXTS["en"]
+        self.assertEqual(set(uk), set(en))
+        self.assertEqual(set(uk["ownership_labels"]), set(en["ownership_labels"]))
+        self.assertEqual(set(uk["columns"]), set(en["columns"]))
+        self.assertEqual(set(uk["match_status_labels"]), set(en["match_status_labels"]))
+
 
 class GeographyResolutionTests(unittest.TestCase):
     @classmethod
