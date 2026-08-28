@@ -255,10 +255,15 @@ UI_TEXTS = {
         "view_mode_label": "Режим карти",
         "view_mode_polygons": "🗺️ Карта громад (полігони)",
         "view_mode_points": "📍 Карта точок (надавачі послуг)",
-        "kpi_total": "Загальна кількість закладів",
+        "quality_header": "Покриття географічного зіставлення",
+        "quality_source": "Записів у джерелі",
+        "quality_mapped": "Показано на карті",
+        "quality_unmatched": "Без полігона",
+        "quality_note": "Незіставлені записи не втрачаються: вони доступні в сирій таблиці та у CSV-звіті нижче.",
+        "kpi_total": "Закладів за фільтрами",
         "kpi_medical": "Медичні заклади",
         "kpi_social": "Соціальні заклади",
-        "kpi_hromadas": "Громад з даними",
+        "kpi_hromadas": "Громад за фільтрами",
         "tooltip_hromada": "Громада:",
         "tooltip_total": "Всього закладів:",
         "tooltip_medical": "Медичних:",
@@ -267,13 +272,19 @@ UI_TEXTS = {
         "legend_total": "Кількість закладів",
         "layer_choropleth": "Заклади за громадами",
         "layer_points": "📍 Заклади (точки) — очікує геокодування",
-        "unmatched_expander": "⚠️ Громади з Excel, не зіставлені з картою ({n})",
+        "unmatched_expander": "⚠️ Незіставлені назви громад ({groups}; записів: {rows})",
         "unmatched_col_key": "Нормалізована назва",
+        "unmatched_col_status": "Причина",
         "unmatched_col_total": "Всього закладів",
         "unmatched_col_medical": "Медичних",
         "unmatched_col_social": "Соціальних",
         "unmatched_col_ownership": "Форма власності",
         "download_unmatched_button": "⬇️ Завантажити список незматчених (CSV)",
+        "match_status_labels": {
+            "name_not_found": "Полігон із такою назвою відсутній",
+            "ambiguous": "Потрібне уточнення громади",
+            "unknown_oblast": "Область не розпізнано",
+        },
         "not_specified": "Не вказано",
         "ownership_labels": {
             "public": "Державні",
@@ -364,10 +375,15 @@ UI_TEXTS = {
         "view_mode_label": "Map view",
         "view_mode_polygons": "🗺️ Hromada map (polygons)",
         "view_mode_points": "📍 Points map (service providers)",
-        "kpi_total": "Total facilities",
+        "quality_header": "Geographic matching coverage",
+        "quality_source": "Source records",
+        "quality_mapped": "Shown on map",
+        "quality_unmatched": "Without a polygon",
+        "quality_note": "Unmatched records are retained in the raw table and in the downloadable CSV report below.",
+        "kpi_total": "Facilities after filters",
         "kpi_medical": "Medical facilities",
         "kpi_social": "Social facilities",
-        "kpi_hromadas": "Hromadas with data",
+        "kpi_hromadas": "Hromadas after filters",
         "tooltip_hromada": "Hromada:",
         "tooltip_total": "Total facilities:",
         "tooltip_medical": "Medical:",
@@ -376,13 +392,19 @@ UI_TEXTS = {
         "legend_total": "Number of facilities",
         "layer_choropleth": "Facilities by hromada",
         "layer_points": "📍 Facilities (points) — pending geocoding",
-        "unmatched_expander": "⚠️ Hromadas from Excel not matched to the map ({n})",
+        "unmatched_expander": "⚠️ Unmatched hromada names ({groups}; records: {rows})",
         "unmatched_col_key": "Normalized name",
+        "unmatched_col_status": "Reason",
         "unmatched_col_total": "Total facilities",
         "unmatched_col_medical": "Medical",
         "unmatched_col_social": "Social",
         "unmatched_col_ownership": "Ownership",
         "download_unmatched_button": "⬇️ Download unmatched list (CSV)",
+        "match_status_labels": {
+            "name_not_found": "No polygon with this name",
+            "ambiguous": "Hromada needs clarification",
+            "unknown_oblast": "Oblast is not recognized",
+        },
         "not_specified": "Not specified",
         "ownership_labels": {
             "public": "Public",
@@ -652,6 +674,34 @@ def canonical_ownership_key(value) -> str:
     return OWNERSHIP_ALIASES.get(normalized, normalized)
 
 
+def prepare_source_display(df: pd.DataFrame) -> pd.DataFrame:
+    """Повертає лише вихідні колонки Excel у безпечному для Streamlit вигляді."""
+    technical_columns = {"hromada_norm", "hromada_norm_baseline"}
+    source_columns = [
+        column
+        for column in df.columns
+        if not column.startswith("_") and column not in technical_columns
+    ]
+    display = df[source_columns].copy()
+    if "ID" in display.columns:
+        display["ID"] = display["ID"].map(
+            lambda value: None
+            if pd.isna(value)
+            else str(int(value))
+            if isinstance(value, float) and value.is_integer()
+            else str(value)
+        )
+    # Excel-колонки на кшталт NHSU package містять суміш чисел і тексту.
+    # Уніфікуємо лише відображувану копію, щоб Arrow/Streamlit не вгадував типи.
+    for column in display.columns:
+        dtype = display[column].dtype
+        if pd.api.types.is_object_dtype(dtype) or pd.api.types.is_string_dtype(dtype):
+            display[column] = display[column].map(
+                lambda value: None if pd.isna(value) else str(value)
+            )
+    return display
+
+
 def ownership_label_for_value(value, lang: str) -> str:
     key = canonical_ownership_key(value)
     if key == UNSPECIFIED_KEY:
@@ -721,9 +771,9 @@ def log_mapping_impact(df: pd.DataFrame) -> None:
     matched = int(counts.get("matched", 0))
 
     print("=" * 60)
-    print("[GEOGRAPHY MATCHING] Підсумок")
-    print(f"  Усього рядків закладів: {total}")
-    print(f"  Однозначно зіставлено: {matched} ({matched / total:.1%})")
+    print("[GEOGRAPHY MATCHING] Summary")
+    print(f"  Source facility records: {total}")
+    print(f"  Uniquely matched: {matched} ({matched / total:.1%})")
     for status in ("name_not_found", "ambiguous", "unknown_oblast"):
         print(f"  {status}: {int(counts.get(status, 0))}")
     print("=" * 60)
@@ -1131,6 +1181,15 @@ def main() -> None:
 
     df, geo, agg, unmatched = prepare_data(str(EXCEL_PATH), str(GEOJSON_PATH))
 
+    st.caption(f"**{ui['quality_header']}**")
+    quality_source, quality_mapped, quality_unmatched = st.columns(3)
+    mapped_count = int(df["_geo_id"].notna().sum())
+    unmatched_count = len(df) - mapped_count
+    quality_source.metric(ui["quality_source"], len(df))
+    quality_mapped.metric(ui["quality_mapped"], mapped_count)
+    quality_unmatched.metric(ui["quality_unmatched"], unmatched_count)
+    st.caption(ui["quality_note"])
+
     oblasts_ua = sorted({f["properties"]["oblast_ua"] for f in geo["features"] if f["properties"]["oblast_ua"]})
     oblast_display = {
         ua: (ua if lang == "uk" else transliterate_ua_to_en(ua)) for ua in oblasts_ua
@@ -1280,16 +1339,20 @@ def main() -> None:
         st_folium(m, width=None, height=700, returned_objects=[])
 
     with tab2:
-        df_display = df.drop(columns=["hromada_norm", "hromada_norm_baseline"]).rename(columns=ui["columns"])
-        st.dataframe(df_display, use_container_width=True)
+        df_display = prepare_source_display(df).rename(columns=ui["columns"])
+        st.dataframe(df_display, width="stretch")
 
         unmatched_display = unmatched.copy()
         unmatched_display["ownership_str"] = unmatched_display["ownership_counts"].apply(
             lambda c: format_ownership_str(c, lang)
         )
+        unmatched_display["match_status"] = unmatched_display["match_status"].map(
+            lambda status: ui["match_status_labels"].get(status, status)
+        )
         unmatched_display = unmatched_display.drop(columns=["ownership_counts"]).rename(
             columns={
                 "norm_key": ui["unmatched_col_key"],
+                "match_status": ui["unmatched_col_status"],
                 "oblasts": ui["columns"]["Oblast"],
                 "raions": ui["columns"]["Raion"],
                 "total": ui["unmatched_col_total"],
@@ -1301,6 +1364,7 @@ def main() -> None:
         unmatched_display = unmatched_display[
             [
                 ui["unmatched_col_key"],
+                ui["unmatched_col_status"],
                 ui["columns"]["Oblast"],
                 ui["columns"]["Raion"],
                 ui["unmatched_col_total"],
@@ -1309,8 +1373,13 @@ def main() -> None:
                 ui["unmatched_col_ownership"],
             ]
         ]
-        with st.expander(ui["unmatched_expander"].format(n=len(unmatched))):
-            st.dataframe(unmatched_display, use_container_width=True)
+        with st.expander(
+            ui["unmatched_expander"].format(
+                groups=len(unmatched),
+                rows=int(unmatched["total"].sum()) if not unmatched.empty else 0,
+            )
+        ):
+            st.dataframe(unmatched_display, width="stretch")
             st.download_button(
                 label=ui["download_unmatched_button"],
                 data=unmatched_display.to_csv(index=False).encode("utf-8-sig"),

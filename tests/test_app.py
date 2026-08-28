@@ -30,6 +30,13 @@ class OwnershipNormalizationTests(unittest.TestCase):
         filtered = self.df[self.df["_ownership_key"].isin(selected)]
         self.assertEqual(len(filtered), len(self.df))
 
+    def test_raw_table_contains_only_the_21_source_columns(self):
+        display = app.prepare_source_display(self.df)
+        self.assertEqual(len(display.columns), 21)
+        self.assertFalse(any(column.startswith("_") for column in display.columns))
+        self.assertNotIn("hromada_norm", display.columns)
+        self.assertNotIn("hromada_norm_baseline", display.columns)
+
 
 class GeographyResolutionTests(unittest.TestCase):
     @classmethod
