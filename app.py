@@ -1,11 +1,15 @@
 """Мапа надавачів послуг педіатричної реабілітації в Україні."""
 
+import html
 import json
+import math
+import random
 from pathlib import Path
 
 import folium
 import pandas as pd
 import streamlit as st
+from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -14,6 +18,7 @@ GEOJSON_PATH = BASE_DIR / "ukraine_hromadas.geojson"
 SHEET_NAME = "Provider Data"
 
 COL_HROMADA = "Hromada"
+COL_PROVIDER_NAME = "Provider Name"
 COL_NHSU = "NHSU package (25/53/54)"
 COL_OWNERSHIP = "Ownership / funding type (public / communal / private / NGO-charitable / donor / mixed)"
 
@@ -33,6 +38,20 @@ TRANSLIT_MID = {"є": "ie", "ї": "i", "й": "i", "ю": "iu", "я": "ia"}
 
 UNSPECIFIED_KEY = "_unspecified"
 ALL_OBLASTS = None  # сентинель "усі області" для селектора
+NO_HROMADA_SELECTED = None  # сентинель "громаду не обрано" для селектора
+
+# Колір точки на карті за формою власності (3 кольори + сірий для невказаних).
+OWNERSHIP_COLOR = {
+    "public": "blue",
+    "communal": "blue",
+    "private": "green",
+    "ngo-charitable": "orange",
+    "donor": "orange",
+    "mixed": "orange",
+    UNSPECIFIED_KEY: "gray",
+}
+# Порядок опцій у мультиселекті форми власності в сайдбарі.
+OWNERSHIP_LABEL_KEYS_ORDER = ["public", "communal", "private", "ngo-charitable", "donor", "mixed", UNSPECIFIED_KEY]
 
 # Excel часто записує обласні/великі районні центри іменниковою формою міста
 # ("Kharkiv"), а не прикметниковою формою громади ("Харківська"), тому
@@ -95,6 +114,28 @@ UI_TEXTS = {
         "lang_label": "Оберіть мову / Choose language",
         "oblast_label": "Оберіть область",
         "oblast_all": "Усі області",
+        "hromada_select_label": "Оберіть громаду",
+        "hromada_select_placeholder": "— не обрано —",
+        "hromada_detail_header": "📋 Заклади в громаді",
+        "hromada_detail_total": "Всього закладів: **{n}**",
+        "facility_medical_tag": "🏥 Медичний",
+        "facility_social_tag": "🤝 Соціальний",
+        "no_facilities_matched": "Немає зіставлених закладів у базі для цієї громади.",
+        "facility_name_fallback": "Без назви",
+        "ownership_filter_label": "Форма власності",
+        "nhsu_filter_label": "Пакет НСЗУ",
+        "nhsu_filter_all": "Усі",
+        "nhsu_filter_yes": "Так",
+        "nhsu_filter_no": "Ні",
+        "popup_ownership": "Форма власності",
+        "popup_address": "Адреса",
+        "popup_nhsu": "Пакет НСЗУ",
+        "popup_nhsu_none": "Немає",
+        "legend_ownership_title": "Форма власності",
+        "legend_public_communal": "Комунальні / Державні",
+        "legend_private": "Приватні",
+        "legend_ngo_donor": "ГО / Благодійні / Донорські",
+        "legend_unspecified": "Не вказано",
         "tab_map": "🗺️ Карта громад",
         "tab_data": "📊 Сирі дані (Таблиця)",
         "kpi_total": "Загальна кількість закладів",
@@ -155,6 +196,28 @@ UI_TEXTS = {
         "lang_label": "Оберіть мову / Choose language",
         "oblast_label": "Select oblast",
         "oblast_all": "All oblasts",
+        "hromada_select_label": "Select hromada",
+        "hromada_select_placeholder": "— none selected —",
+        "hromada_detail_header": "📋 Facilities in hromada",
+        "hromada_detail_total": "Total facilities: **{n}**",
+        "facility_medical_tag": "🏥 Medical",
+        "facility_social_tag": "🤝 Social",
+        "no_facilities_matched": "No matched facilities in the database for this hromada.",
+        "facility_name_fallback": "Unnamed",
+        "ownership_filter_label": "Ownership type",
+        "nhsu_filter_label": "NHSU package",
+        "nhsu_filter_all": "All",
+        "nhsu_filter_yes": "Yes",
+        "nhsu_filter_no": "No",
+        "popup_ownership": "Ownership",
+        "popup_address": "Address",
+        "popup_nhsu": "NHSU package",
+        "popup_nhsu_none": "None",
+        "legend_ownership_title": "Ownership type",
+        "legend_public_communal": "Communal / Public",
+        "legend_private": "Private",
+        "legend_ngo_donor": "NGO / Charity / Donor",
+        "legend_unspecified": "Not specified",
         "tab_map": "🗺️ Hromada Map",
         "tab_data": "📊 Raw Data (Table)",
         "kpi_total": "Total facilities",
@@ -292,6 +355,10 @@ def load_excel_data(path: str) -> pd.DataFrame:
     # Без словника винятків (для порівняння "до/після" у діагностиці нижче).
     df["hromada_norm_baseline"] = df[COL_HROMADA].apply(normalize_text_en)
     df["hromada_norm"] = df[COL_HROMADA].apply(normalize_hromada_from_excel)
+    # Обчислені один раз тут, а не в кожному фільтрі/агрегації нижче — і для
+    # групувань (compute_hromada_stats), і для інтерактивних фільтрів у сайдбарі.
+    df["_is_medical"] = df[COL_NHSU].apply(is_filled)
+    df["_ownership_key"] = df[COL_OWNERSHIP].apply(canonical_ownership_key)
     return df
 
 
@@ -326,6 +393,13 @@ def canonical_ownership_key(value) -> str:
     return str(value).strip().lower()
 
 
+def ownership_label_for_value(value, lang: str) -> str:
+    key = canonical_ownership_key(value)
+    if key == UNSPECIFIED_KEY:
+        return UI_TEXTS[lang]["not_specified"]
+    return UI_TEXTS[lang]["ownership_labels"].get(key, str(value).strip())
+
+
 def format_ownership_str(counts: dict, lang: str) -> str:
     labels = UI_TEXTS[lang]["ownership_labels"]
     not_specified = UI_TEXTS[lang]["not_specified"]
@@ -336,11 +410,20 @@ def format_ownership_str(counts: dict, lang: str) -> str:
     return ", ".join(parts) if parts else not_specified
 
 
-@st.cache_data(show_spinner=False)
-def aggregate_providers(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df["_is_medical"] = df[COL_NHSU].apply(is_filled)
-    df["_ownership_key"] = df[COL_OWNERSHIP].apply(canonical_ownership_key)
+def compute_hromada_stats(df: pd.DataFrame) -> pd.DataFrame:
+    """Групує заклади за hromada_norm. Не кешована навмисно: викликається і на
+
+    повному df (через aggregate_providers нижче — кешовано, важкий шлях), і на
+    інтерактивно відфільтрованому df (форма власності/НСЗУ у сайдбарі — тут
+    кешування не дало б користі, бо вхід міняється щовидгету, а групування
+    ~5600 рядків саме по собі займає одиниці мілісекунд).
+    """
+    columns = ["norm_key", "total", "medical", "social", "ownership_counts", "oblasts", "raions"]
+    if df.empty:
+        # Порожній вхід (наприклад, фільтри в сайдбарі відсікли всі заклади) —
+        # повертаємо DataFrame з правильними колонками, а не порожній без жодної,
+        # інакше .set_index("norm_key") нижче по коду впаде з KeyError.
+        return pd.DataFrame(columns=columns)
 
     records = []
     for norm_key, group in df.groupby("hromada_norm"):
@@ -367,6 +450,11 @@ def aggregate_providers(df: pd.DataFrame) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
+def aggregate_providers(df: pd.DataFrame) -> pd.DataFrame:
+    return compute_hromada_stats(df)
+
+
+@st.cache_data(show_spinner=False)
 def log_mapping_impact(df: pd.DataFrame, geo: dict) -> None:
     """Друкує в консоль ефект словника винятків CITY_TO_HROMADA_MAPPING.
 
@@ -388,28 +476,118 @@ def log_mapping_impact(df: pd.DataFrame, geo: dict) -> None:
 
 
 @st.cache_data(show_spinner=False)
-def merge_stats_into_geojson(geo: dict, agg: pd.DataFrame) -> tuple[dict, pd.DataFrame]:
-    agg_by_key = agg.set_index("norm_key")
-    geo_keys = set()
+def find_unmatched(geo: dict, agg: pd.DataFrame) -> pd.DataFrame:
+    """Громади з Excel, для яких немає жодного полігону в GeoJSON.
 
+    Більше не мутує geo (раніше writing total/medical/social напряму в
+    properties тут створювало "застиглі" непрофільтровані цифри — build_map
+    тепер сам щоразу свіжо пише ці властивості з переданого agg, включно з
+    відфільтрованим за формою власності/НСЗУ, тож тут лишається тільки
+    обчислення unmatched).
+    """
+    geo_keys = {f["properties"]["norm_key"] for f in geo["features"]}
+    return agg[~agg["norm_key"].isin(geo_keys)].sort_values("total", ascending=False)
+
+
+def polygon_ring_centroid(ring: list) -> tuple[float, float, float]:
+    """(area, cx, cy) для одного кільця координат [lon, lat] за формулою центроїда полігону."""
+    n = len(ring)
+    if n < 3:
+        x, y = (ring[0][0], ring[0][1]) if ring else (0.0, 0.0)
+        return 0.0, x, y
+    area_sum = cx_sum = cy_sum = 0.0
+    for i in range(n):
+        x0, y0 = ring[i][0], ring[i][1]
+        x1, y1 = ring[(i + 1) % n][0], ring[(i + 1) % n][1]
+        cross = x0 * y1 - x1 * y0
+        area_sum += cross
+        cx_sum += (x0 + x1) * cross
+        cy_sum += (y0 + y1) * cross
+    area = area_sum / 2.0
+    if abs(area) < 1e-12:
+        xs = [p[0] for p in ring]
+        ys = [p[1] for p in ring]
+        return 0.0, sum(xs) / len(xs), sum(ys) / len(ys)
+    return abs(area), cx_sum / (6.0 * area), cy_sum / (6.0 * area)
+
+
+def geometry_centroid_and_extent(geometry: dict) -> tuple[float, float, float] | None:
+    """(lon, lat, extent_degrees) — центроїд Polygon/MultiPolygon і приблизний розмір
+    його bounding box (для масштабування jitter-розкиду точок навколо центру)."""
+    gtype = geometry.get("type")
+    if gtype == "Polygon":
+        polygons = [geometry["coordinates"]]
+    elif gtype == "MultiPolygon":
+        polygons = geometry["coordinates"]
+    else:
+        return None
+
+    weighted_x = weighted_y = total_area = 0.0
+    all_lons, all_lats = [], []
+    for poly in polygons:
+        if not poly:
+            continue
+        exterior = poly[0]
+        area, cx, cy = polygon_ring_centroid(exterior)
+        weighted_x += area * cx
+        weighted_y += area * cy
+        total_area += area
+        all_lons.extend(p[0] for p in exterior)
+        all_lats.extend(p[1] for p in exterior)
+
+    if not all_lons:
+        return None
+    if total_area > 0:
+        centroid_lon, centroid_lat = weighted_x / total_area, weighted_y / total_area
+    else:
+        centroid_lon, centroid_lat = sum(all_lons) / len(all_lons), sum(all_lats) / len(all_lats)
+
+    extent = max(max(all_lons) - min(all_lons), max(all_lats) - min(all_lats))
+    return centroid_lon, centroid_lat, extent
+
+
+def jitter_point(lon: float, lat: float, extent: float, seed: int) -> tuple[float, float]:
+    """Невеликий випадковий (але детермінований за seed) зсув точки навколо центру
+    громади, щоб заклади в одній громаді не накладались один на одного."""
+    rng = random.Random(seed)
+    radius = rng.uniform(0, max(extent * 0.12, 0.01))
+    angle = rng.uniform(0, 2 * math.pi)
+    return lon + radius * math.cos(angle), lat + radius * math.sin(angle)
+
+
+def geocode_facilities(df: pd.DataFrame, geo: dict) -> pd.DataFrame:
+    """Координати закладу = центроїд полігону його громади + jitter-розкид.
+
+    Миттєво і без зовнішніх залежностей (жодних мережевих запитів), тому не
+    потребує власного @st.cache_data — і так виконується лише в момент
+    cache-miss всередині prepare_data (див. коментар там). Заклади з громадою,
+    якої немає серед полігонів (unmatched), отримують lat/lon = None і просто
+    пропускаються при малюванні точок — без падіння коду.
+    """
+    centroids: dict[str, tuple[float, float, float]] = {}
     for feature in geo["features"]:
-        props = feature["properties"]
-        key = props["norm_key"]
-        geo_keys.add(key)
-        if key in agg_by_key.index:
-            row = agg_by_key.loc[key]
-            props["total"] = int(row["total"])
-            props["medical"] = int(row["medical"])
-            props["social"] = int(row["social"])
-            props["ownership_counts"] = row["ownership_counts"]
-        else:
-            props["total"] = 0
-            props["medical"] = 0
-            props["social"] = 0
-            props["ownership_counts"] = {}
+        key = feature["properties"]["norm_key"]
+        result = geometry_centroid_and_extent(feature["geometry"])
+        if result is not None:
+            centroids[key] = result
 
-    unmatched = agg[~agg["norm_key"].isin(geo_keys)].sort_values("total", ascending=False)
-    return geo, unmatched
+    lats: list[float | None] = []
+    lons: list[float | None] = []
+    for idx, hromada_norm in df["hromada_norm"].items():
+        center = centroids.get(hromada_norm)
+        if center is None:
+            lats.append(None)
+            lons.append(None)
+            continue
+        lon, lat, extent = center
+        jlon, jlat = jitter_point(lon, lat, extent, seed=int(idx))
+        lats.append(jlat)
+        lons.append(jlon)
+
+    df = df.copy()
+    df["lat"] = lats
+    df["lon"] = lons
+    return df
 
 
 @st.cache_data(show_spinner="Обробка Excel і GeoJSON…")
@@ -418,27 +596,59 @@ def prepare_data(excel_path: str, geojson_path: str) -> tuple[pd.DataFrame, dict
 
     Важливо тримати це одним cache_data-викликом: якщо замість цього main()
     ланцюжком викликає load_excel_data -> aggregate_providers ->
-    merge_stats_into_geojson з df/geo як аргументами, Streamlit змушений на
-    КОЖЕН st.rerun() (наприклад, перемикання мови) заново хешувати ці важкі
-    об'єкти (DataFrame на 5590 рядків, GeoJSON на ~4 МБ), що коштує майже
-    стільки ж, скільки сам розрахунок. Тут же кеш-ключ — два коротких рядки
-    шляхів, тож на повторних rerun'ах ця функція не виконується взагалі.
+    find_unmatched з df/geo як аргументами, Streamlit змушений на КОЖЕН
+    st.rerun() (наприклад, перемикання мови) заново хешувати ці важкі об'єкти
+    (DataFrame на 5590 рядків, GeoJSON на ~4 МБ), що коштує майже стільки ж,
+    скільки сам розрахунок. Тут же кеш-ключ — два коротких рядки шляхів, тож
+    на повторних rerun'ах ця функція не виконується взагалі.
     """
     df = load_excel_data(excel_path)
     geo = load_geojson(geojson_path)
     log_mapping_impact(df, geo)
+    df = geocode_facilities(df, geo)
     agg = aggregate_providers(df)
-    geo, unmatched = merge_stats_into_geojson(geo, agg)
+    unmatched = find_unmatched(geo, agg)
     return df, geo, agg, unmatched
 
 
-def build_map(geo: dict, agg: pd.DataFrame, lang: str, ui: dict) -> folium.Map:
-    m = folium.Map(location=[48.3794, 31.1656], zoom_start=6, tiles="cartodbpositron")
+def build_ownership_legend_html(ui: dict) -> str:
+    rows = [
+        (OWNERSHIP_COLOR["communal"], ui["legend_public_communal"]),
+        (OWNERSHIP_COLOR["private"], ui["legend_private"]),
+        (OWNERSHIP_COLOR["ngo-charitable"], ui["legend_ngo_donor"]),
+        (OWNERSHIP_COLOR[UNSPECIFIED_KEY], ui["legend_unspecified"]),
+    ]
+    items = "".join(
+        f'<div style="margin:2px 0;">'
+        f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;'
+        f'background:{color};margin-right:6px;"></span>{html.escape(label)}</div>'
+        for color, label in rows
+    )
+    return (
+        '<div style="position: fixed; bottom: 30px; left: 10px; z-index: 9999; '
+        'background: white; color: #111; padding: 8px 12px; border-radius: 6px; '
+        'box-shadow: 0 1px 4px rgba(0,0,0,0.35); font-size: 12px; line-height: 1.4;">'
+        f'<b>{html.escape(ui["legend_ownership_title"])}</b>{items}</div>'
+    )
 
+
+def build_map(geo: dict, agg: pd.DataFrame, facility_df: pd.DataFrame, lang: str, ui: dict) -> folium.Map:
+    # OpenStreetMap — безкоштовний тайл без API-ключа (CartoDB positron вимагав
+    # ключ і показував водяний знак "API key required").
+    m = folium.Map(location=[48.3794, 31.1656], zoom_start=6, tiles="OpenStreetMap")
+
+    # Свіжий per-render мердж статистики (agg тут може бути вже відфільтрованим
+    # за формою власності/НСЗУ) у properties полігонів — без мутації кешованого
+    # geo, тож build_map лишається дешевим і безпечним для повторних викликів.
     name_field = "hromada_ua" if lang == "uk" else "hromada_en"
+    stats_by_key = agg.set_index("norm_key").to_dict("index")
     for feature in geo["features"]:
         props = feature["properties"]
-        props["ownership_display"] = format_ownership_str(props.get("ownership_counts", {}), lang)
+        stats = stats_by_key.get(props["norm_key"], {"total": 0, "medical": 0, "social": 0, "ownership_counts": {}})
+        props["total"] = int(stats["total"])
+        props["medical"] = int(stats["medical"])
+        props["social"] = int(stats["social"])
+        props["ownership_display"] = format_ownership_str(stats.get("ownership_counts", {}), lang)
 
     choropleth = folium.Choropleth(
         geo_data=geo,
@@ -468,11 +678,36 @@ def build_map(geo: dict, agg: pd.DataFrame, lang: str, ui: dict) -> folium.Map:
     )
 
     # --- Точковий шар (окремі заклади) ---
-    # Заглушка: в таблиці є лише Address, координат Lat/Lon поки немає.
-    # Після геокодування адрес сюди додати FeatureGroup з CircleMarker/Marker.
-    points_layer = folium.FeatureGroup(name=ui["layer_points"], show=False)
+    # MarkerCluster — бо закладів може бути кілька тисяч, і без кластеризації
+    # карта стає непридатною для використання (тисячі маркерів одночасно).
+    points_layer = MarkerCluster(name=ui["layer_points"])
+    for _, row in facility_df.iterrows():
+        if pd.isna(row["lat"]) or pd.isna(row["lon"]):
+            continue
+        color = OWNERSHIP_COLOR.get(row["_ownership_key"], OWNERSHIP_COLOR[UNSPECIFIED_KEY])
+        name = str(row[COL_PROVIDER_NAME]).strip() if is_filled(row[COL_PROVIDER_NAME]) else ui["facility_name_fallback"]
+        address = str(row["Address"]).strip() if is_filled(row["Address"]) else ""
+        nhsu_value = row[COL_NHSU]
+        nhsu_display = str(nhsu_value).strip() if is_filled(nhsu_value) else ui["popup_nhsu_none"]
+        popup_html = (
+            f"<b>{html.escape(name)}</b><br>"
+            f"{html.escape(ui['popup_ownership'])}: {html.escape(ownership_label_for_value(row[COL_OWNERSHIP], lang))}<br>"
+            f"{html.escape(ui['popup_address'])}: {html.escape(address or '—')}<br>"
+            f"{html.escape(ui['popup_nhsu'])}: {html.escape(nhsu_display)}"
+        )
+        folium.CircleMarker(
+            location=[row["lat"], row["lon"]],
+            radius=5,
+            color=color,
+            weight=1,
+            fill=True,
+            fill_color=color,
+            fill_opacity=0.85,
+            popup=folium.Popup(popup_html, max_width=280),
+        ).add_to(points_layer)
     points_layer.add_to(m)
 
+    m.get_root().html.add_child(folium.Element(build_ownership_legend_html(ui)))
     folium.LayerControl().add_to(m)
     return m
 
@@ -508,18 +743,73 @@ def main() -> None:
         features = [f for f in geo["features"] if f["properties"]["oblast_ua"] == selected_oblast]
     geo_view = {"type": "FeatureCollection", "features": features}
     keys_in_view = {f["properties"]["norm_key"] for f in features}
-    agg_view = agg[agg["norm_key"].isin(keys_in_view)]
+
+    # --- Фільтри форми власності та пакету НСЗУ ---
+    ownership_options = list(OWNERSHIP_LABEL_KEYS_ORDER)
+    selected_ownership_keys = st.sidebar.multiselect(
+        ui["ownership_filter_label"],
+        options=ownership_options,
+        default=ownership_options,
+        format_func=lambda k: UI_TEXTS[lang]["not_specified"] if k == UNSPECIFIED_KEY else ui["ownership_labels"][k],
+    )
+    nhsu_filter = st.sidebar.radio(
+        ui["nhsu_filter_label"],
+        options=["all", "yes", "no"],
+        format_func=lambda v: {"all": ui["nhsu_filter_all"], "yes": ui["nhsu_filter_yes"], "no": ui["nhsu_filter_no"]}[v],
+        horizontal=True,
+    )
+
+    df_scope = df[df["hromada_norm"].isin(keys_in_view)]
+    df_filtered = df_scope[df_scope["_ownership_key"].isin(selected_ownership_keys)]
+    if nhsu_filter == "yes":
+        df_filtered = df_filtered[df_filtered["_is_medical"]]
+    elif nhsu_filter == "no":
+        df_filtered = df_filtered[~df_filtered["_is_medical"]]
+
+    agg_view = compute_hromada_stats(df_filtered)
+
+    # Список громад для випадаючого списку — каскадно звужується разом з
+    # фільтром області вище (features вже відфільтровані за оболастю).
+    # Це суто географічний вибір, тому не залежить від фільтрів власності/НСЗУ.
+    name_field = "hromada_ua" if lang == "uk" else "hromada_en"
+    hromada_display_by_key = {f["properties"]["norm_key"]: f["properties"][name_field] for f in features}
+    selected_hromada_key = st.sidebar.selectbox(
+        ui["hromada_select_label"],
+        options=[NO_HROMADA_SELECTED] + sorted(hromada_display_by_key, key=lambda k: hromada_display_by_key[k]),
+        format_func=lambda k: ui["hromada_select_placeholder"] if k is NO_HROMADA_SELECTED else hromada_display_by_key[k],
+    )
+
+    if selected_hromada_key is not NO_HROMADA_SELECTED:
+        hromada_display_name = hromada_display_by_key[selected_hromada_key]
+        # Список закладів відповідає активним фільтрам власності/НСЗУ, щоб не
+        # суперечити тому, що показано на карті.
+        facility_rows = df_filtered[df_filtered["hromada_norm"] == selected_hromada_key]
+        with st.sidebar.expander(f"{ui['hromada_detail_header']}: {hromada_display_name}", expanded=True):
+            if facility_rows.empty:
+                st.caption(ui["no_facilities_matched"])
+            else:
+                st.markdown(ui["hromada_detail_total"].format(n=len(facility_rows)))
+                for _, row in facility_rows.iterrows():
+                    name = row[COL_PROVIDER_NAME]
+                    name = str(name).strip() if is_filled(name) else ui["facility_name_fallback"]
+                    ownership = ownership_label_for_value(row[COL_OWNERSHIP], lang)
+                    nhsu_value = row[COL_NHSU]
+                    if is_filled(nhsu_value):
+                        tag = f"{ui['facility_medical_tag']} ({str(nhsu_value).strip()})"
+                    else:
+                        tag = ui["facility_social_tag"]
+                    st.markdown(f"- **{name}** — {ownership} · {tag}")
 
     tab1, tab2 = st.tabs([ui["tab_map"], ui["tab_data"]])
 
     with tab1:
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric(ui["kpi_total"], int(agg_view["total"].sum()))
-        col2.metric(ui["kpi_medical"], int(agg_view["medical"].sum()))
-        col3.metric(ui["kpi_social"], int(agg_view["social"].sum()))
-        col4.metric(ui["kpi_hromadas"], int((agg_view["total"] > 0).sum()))
+        col1.metric(ui["kpi_total"], int(agg_view["total"].sum()) if not agg_view.empty else 0)
+        col2.metric(ui["kpi_medical"], int(agg_view["medical"].sum()) if not agg_view.empty else 0)
+        col3.metric(ui["kpi_social"], int(agg_view["social"].sum()) if not agg_view.empty else 0)
+        col4.metric(ui["kpi_hromadas"], int((agg_view["total"] > 0).sum()) if not agg_view.empty else 0)
 
-        m = build_map(geo_view, agg_view, lang, ui)
+        m = build_map(geo_view, agg_view, df_filtered, lang, ui)
         st_folium(m, width=None, height=700, returned_objects=[])
 
     with tab2:
