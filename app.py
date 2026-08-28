@@ -9,7 +9,7 @@ from pathlib import Path
 import folium
 import pandas as pd
 import streamlit as st
-from folium.plugins import MarkerCluster
+from folium.plugins import FastMarkerCluster
 from streamlit_folium import st_folium
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -697,13 +697,38 @@ def build_polygon_map(geo: dict, agg: pd.DataFrame, lang: str, ui: dict) -> foli
     return m
 
 
+# JS-колбек для FastMarkerCluster: один спільний рядок JS замість тисяч окремих
+# folium.CircleMarker+Popup Python-об'єктів. Дані (лат/лон/колір/попап) йдуть
+# як компактний масив, безпечно серіалізований через Jinja |tojson (folium
+# сам це робить у своєму шаблоні) — це і прибирає зависання браузера.
+FAST_CLUSTER_CALLBACK = """
+function (row) {
+    var marker = L.circleMarker(new L.LatLng(row[0], row[1]), {
+        radius: 5,
+        color: row[2],
+        weight: 1,
+        fill: true,
+        fillColor: row[2],
+        fillOpacity: 0.85
+    });
+    marker.bindPopup(row[3], {maxWidth: 280});
+    return marker;
+}
+"""
+
+
 def build_points_map(facility_df: pd.DataFrame, lang: str, ui: dict) -> folium.Map:
-    """Режим 2: точки окремих закладів, кольорові за формою власності."""
+    """Режим 2: точки окремих закладів, кольорові за формою власності.
+
+    FastMarkerCluster замість MarkerCluster: MarkerCluster все одно створює
+    Python-об'єкт CircleMarker+Popup на кожен із ~5000 закладів і серіалізує
+    їх повністю в HTML (сторінка виходила ~6+ МБ) — саме це "вішало" браузер
+    ще до того, як спрацьовувала кластеризація. FastMarkerCluster передає лише
+    компактний масив даних і будує маркери в браузері одним JS-колбеком.
+    """
     m = new_base_map()
 
-    # MarkerCluster — бо закладів може бути кілька тисяч, і без кластеризації
-    # карта стає непридатною для використання (тисячі маркерів одночасно).
-    points_layer = MarkerCluster(name=ui["layer_points"])
+    rows = []
     for _, row in facility_df.iterrows():
         if pd.isna(row["lat"]) or pd.isna(row["lon"]):
             continue
@@ -718,17 +743,9 @@ def build_points_map(facility_df: pd.DataFrame, lang: str, ui: dict) -> folium.M
             f"{html.escape(ui['popup_address'])}: {html.escape(address or '—')}<br>"
             f"{html.escape(ui['popup_nhsu'])}: {html.escape(nhsu_display)}"
         )
-        folium.CircleMarker(
-            location=[row["lat"], row["lon"]],
-            radius=5,
-            color=color,
-            weight=1,
-            fill=True,
-            fill_color=color,
-            fill_opacity=0.85,
-            popup=folium.Popup(popup_html, max_width=280),
-        ).add_to(points_layer)
-    points_layer.add_to(m)
+        rows.append([float(row["lat"]), float(row["lon"]), color, popup_html])
+
+    FastMarkerCluster(data=rows, callback=FAST_CLUSTER_CALLBACK, name=ui["layer_points"]).add_to(m)
 
     m.get_root().html.add_child(folium.Element(build_ownership_legend_html(ui)))
     folium.LayerControl().add_to(m)
