@@ -1,5 +1,7 @@
 import unittest
 
+import pandas as pd
+
 import app
 
 
@@ -37,6 +39,21 @@ class OwnershipNormalizationTests(unittest.TestCase):
         self.assertNotIn("hromada_norm", display.columns)
         self.assertNotIn("hromada_norm_baseline", display.columns)
 
+    def test_verified_workbook_preserves_every_original_source_cell(self):
+        original = pd.read_excel(
+            app.ORIGINAL_EXCEL_PATH,
+            sheet_name=app.SHEET_NAME,
+            skiprows=3,
+            dtype=object,
+        )
+        verified = pd.read_excel(
+            app.EXCEL_PATH,
+            sheet_name=app.SHEET_NAME,
+            skiprows=3,
+            dtype=object,
+        )
+        pd.testing.assert_frame_equal(original, verified.iloc[:, :21])
+
     def test_ukrainian_and_english_ui_have_the_same_keys(self):
         uk = app.UI_TEXTS["uk"]
         en = app.UI_TEXTS["en"]
@@ -62,12 +79,24 @@ class GeographyResolutionTests(unittest.TestCase):
         geo_ids = list(self.features_by_id)
         self.assertEqual(len(geo_ids), len(self.geo["features"]))
 
-    def test_current_workbook_has_no_ambiguous_or_unknown_oblast_rows(self):
+    def test_current_workbook_maps_all_rows(self):
         status_counts = self.df["_match_status"].value_counts().to_dict()
         self.assertEqual(status_counts.get("ambiguous", 0), 0)
         self.assertEqual(status_counts.get("unknown_oblast", 0), 0)
+        self.assertEqual(status_counts.get("name_not_found", 0), 0)
+        self.assertEqual(status_counts.get("invalid_verified_geo_id", 0), 0)
         self.assertEqual(status_counts.get("matched", 0), 5027)
-        self.assertEqual(status_counts.get("name_not_found", 0), 563)
+        self.assertEqual(status_counts.get("verified_katottg", 0), 563)
+        self.assertEqual(int(self.df["_geo_id"].notna().sum()), 5590)
+
+    def test_every_verified_geo_id_exists_in_geojson(self):
+        verified = self.df[self.df[app.COL_VERIFICATION_STATUS] == "verified"]
+        self.assertEqual(len(verified), 563)
+        self.assertEqual(verified[app.COL_VERIFIED_GEO_ID].isna().sum(), 0)
+        self.assertEqual(
+            set(verified[app.COL_VERIFIED_GEO_ID]) - set(self.features_by_id),
+            set(),
+        )
 
     def test_every_match_stays_inside_its_excel_oblast(self):
         matched = self.df[self.df["_geo_id"].notna()]
@@ -102,7 +131,7 @@ class GeographyResolutionTests(unittest.TestCase):
     def test_aggregate_has_one_row_per_geo_feature(self):
         aggregate = app.compute_hromada_stats(self.df)
         self.assertFalse(aggregate["geo_id"].duplicated().any())
-        self.assertEqual(int(aggregate["total"].sum()), 5027)
+        self.assertEqual(int(aggregate["total"].sum()), 5590)
 
     def test_every_marker_is_inside_its_hromada_polygon(self):
         geometries = {
@@ -120,6 +149,7 @@ class GeographyResolutionTests(unittest.TestCase):
 
     def test_unmatched_rows_do_not_receive_coordinates(self):
         unmatched = self.geocoded[self.geocoded["_geo_id"].isna()]
+        self.assertEqual(len(unmatched), 0)
         self.assertTrue(unmatched["lat"].isna().all())
         self.assertTrue(unmatched["lon"].isna().all())
 

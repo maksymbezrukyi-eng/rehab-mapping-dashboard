@@ -14,7 +14,13 @@ from folium.plugins import FastMarkerCluster
 from streamlit_folium import st_folium
 
 BASE_DIR = Path(__file__).resolve().parent
-EXCEL_PATH = BASE_DIR / "NEW_Mapping_tracker_2506.xlsx"
+ORIGINAL_EXCEL_PATH = BASE_DIR / "NEW_Mapping_tracker_2506.xlsx"
+EXCEL_PATH = (
+    BASE_DIR
+    / "outputs"
+    / "01a0488c-da0f-77a2-a696-ccfac34afd2f"
+    / "NEW_Mapping_tracker_2506_verified.xlsx"
+)
 GEOJSON_PATH = BASE_DIR / "ukraine_hromadas.geojson"
 SHEET_NAME = "Provider Data"
 
@@ -25,6 +31,24 @@ COL_ADDRESS = "Address"
 COL_PROVIDER_NAME = "Provider Name"
 COL_NHSU = "NHSU package (25/53/54)"
 COL_OWNERSHIP = "Ownership / funding type (public / communal / private / NGO-charitable / donor / mixed)"
+COL_VERIFIED_OBLAST = "Verified Oblast"
+COL_VERIFIED_RAION = "Verified Raion"
+COL_VERIFIED_HROMADA = "Verified Hromada"
+COL_VERIFIED_KATOTTG = "Verified KATOTTG"
+COL_VERIFIED_GEO_ID = "Verified Geo ID"
+COL_VERIFICATION_STATUS = "Verification Status"
+VERIFICATION_COLUMNS = {
+    COL_VERIFIED_OBLAST,
+    COL_VERIFIED_RAION,
+    COL_VERIFIED_HROMADA,
+    COL_VERIFIED_KATOTTG,
+    COL_VERIFIED_GEO_ID,
+    COL_VERIFICATION_STATUS,
+    "Verification Method",
+    "Verification Source",
+    "Verification Note",
+    "Verified On",
+}
 
 # Суфіксні слова, які прибираються при нормалізації назви громади (транслітеровані,
 # бо і Excel, і транслітерована назва з GeoJSON зводяться до латиниці для зіставлення).
@@ -259,7 +283,7 @@ UI_TEXTS = {
         "quality_source": "Записів у джерелі",
         "quality_mapped": "Показано на карті",
         "quality_unmatched": "Без полігона",
-        "quality_note": "Незіставлені записи не втрачаються: вони доступні в сирій таблиці та у CSV-звіті нижче.",
+        "quality_note": "Усі раніше незматчені записи перевірено за КАТОТТГ; початкові поля джерела збережено без змін.",
         "kpi_total": "Закладів за фільтрами",
         "kpi_medical": "Медичні заклади",
         "kpi_social": "Соціальні заклади",
@@ -271,7 +295,8 @@ UI_TEXTS = {
         "tooltip_ownership": "Форма власності:",
         "legend_total": "Кількість закладів",
         "layer_choropleth": "Заклади за громадами",
-        "layer_points": "📍 Заклади (точки) — очікує геокодування",
+        "layer_points": "📍 Заклади (наближені точки в межах громади)",
+        "all_mapped_note": "✅ Усі записи мають перевірений полігон громади.",
         "unmatched_expander": "⚠️ Незіставлені назви громад ({groups}; записів: {rows})",
         "unmatched_col_key": "Нормалізована назва",
         "unmatched_col_status": "Причина",
@@ -284,6 +309,7 @@ UI_TEXTS = {
             "name_not_found": "Полігон із такою назвою відсутній",
             "ambiguous": "Потрібне уточнення громади",
             "unknown_oblast": "Область не розпізнано",
+            "invalid_verified_geo_id": "Перевірений Geo ID відсутній у GeoJSON",
         },
         "not_specified": "Не вказано",
         "ownership_labels": {
@@ -379,7 +405,7 @@ UI_TEXTS = {
         "quality_source": "Source records",
         "quality_mapped": "Shown on map",
         "quality_unmatched": "Without a polygon",
-        "quality_note": "Unmatched records are retained in the raw table and in the downloadable CSV report below.",
+        "quality_note": "All previously unmatched records were verified against KATOTTG; original source fields remain unchanged.",
         "kpi_total": "Facilities after filters",
         "kpi_medical": "Medical facilities",
         "kpi_social": "Social facilities",
@@ -391,7 +417,8 @@ UI_TEXTS = {
         "tooltip_ownership": "Ownership type:",
         "legend_total": "Number of facilities",
         "layer_choropleth": "Facilities by hromada",
-        "layer_points": "📍 Facilities (points) — pending geocoding",
+        "layer_points": "📍 Facilities (approximate points inside each hromada)",
+        "all_mapped_note": "✅ Every record has a verified hromada polygon.",
         "unmatched_expander": "⚠️ Unmatched hromada names ({groups}; records: {rows})",
         "unmatched_col_key": "Normalized name",
         "unmatched_col_status": "Reason",
@@ -404,6 +431,7 @@ UI_TEXTS = {
             "name_not_found": "No polygon with this name",
             "ambiguous": "Hromada needs clarification",
             "unknown_oblast": "Oblast is not recognized",
+            "invalid_verified_geo_id": "Verified Geo ID is missing from GeoJSON",
         },
         "not_specified": "Not specified",
         "ownership_labels": {
@@ -609,8 +637,10 @@ def resolve_facility_geography(df: pd.DataFrame, geo: dict) -> pd.DataFrame:
     випадок не вгадується: він лишається unmatched із відповідним статусом.
     """
     candidates_by_region_and_name: dict[tuple[str, str], list[dict]] = {}
+    features_by_geo_id: dict[str, dict] = {}
     for feature in geo["features"]:
         props = feature["properties"]
+        features_by_geo_id[props["geo_id"]] = feature
         candidates_by_region_and_name.setdefault((props["oblast_ua"], props["norm_key"]), []).append(feature)
 
     geo_ids: list[str | None] = []
@@ -618,6 +648,30 @@ def resolve_facility_geography(df: pd.DataFrame, geo: dict) -> pd.DataFrame:
     candidate_counts: list[int] = []
 
     for _, row in df.iterrows():
+        # Перевірені вручну/за КАТОТТГ записи мають пряме посилання на полігон.
+        # Воно використовується лише коли статус підтверджений, а Geo ID справді
+        # існує у поточному GeoJSON; пошкоджене посилання не підміняється здогадом.
+        verification_status = (
+            str(row.get(COL_VERIFICATION_STATUS)).strip().lower()
+            if is_filled(row.get(COL_VERIFICATION_STATUS))
+            else ""
+        )
+        verified_geo_id = (
+            str(row.get(COL_VERIFIED_GEO_ID)).strip()
+            if is_filled(row.get(COL_VERIFIED_GEO_ID))
+            else ""
+        )
+        if verification_status == "verified" and verified_geo_id:
+            if verified_geo_id in features_by_geo_id:
+                geo_ids.append(verified_geo_id)
+                statuses.append("verified_katottg")
+                candidate_counts.append(1)
+            else:
+                geo_ids.append(None)
+                statuses.append("invalid_verified_geo_id")
+                candidate_counts.append(0)
+            continue
+
         oblast_ua = normalize_oblast_from_excel(row.get(COL_OBLAST))
         if oblast_ua is None:
             geo_ids.append(None)
@@ -680,7 +734,9 @@ def prepare_source_display(df: pd.DataFrame) -> pd.DataFrame:
     source_columns = [
         column
         for column in df.columns
-        if not column.startswith("_") and column not in technical_columns
+        if not column.startswith("_")
+        and column not in technical_columns
+        and column not in VERIFICATION_COLUMNS
     ]
     display = df[source_columns].copy()
     if "ID" in display.columns:
@@ -768,13 +824,14 @@ def log_mapping_impact(df: pd.DataFrame) -> None:
     """Друкує підсумок однозначного географічного зіставлення."""
     total = len(df)
     counts = df["_match_status"].value_counts().to_dict()
-    matched = int(counts.get("matched", 0))
+    matched = int(df["_geo_id"].notna().sum())
 
     print("=" * 60)
     print("[GEOGRAPHY MATCHING] Summary")
     print(f"  Source facility records: {total}")
     print(f"  Uniquely matched: {matched} ({matched / total:.1%})")
-    for status in ("name_not_found", "ambiguous", "unknown_oblast"):
+    print(f"  verified_katottg: {int(counts.get('verified_katottg', 0))}")
+    for status in ("name_not_found", "ambiguous", "unknown_oblast", "invalid_verified_geo_id"):
         print(f"  {status}: {int(counts.get(status, 0))}")
     print("=" * 60)
 
@@ -1423,9 +1480,24 @@ def main() -> None:
                 st.markdown(f"**{ui['provider_card_header']}**")
                 st.markdown(f"**{provider_name}**")
                 st.markdown(f"{ui['provider_card_address']}: {_field(provider['Address'])}")
-                st.markdown(f"{ui['provider_card_oblast']}: {_field(provider['Oblast'])}")
-                st.markdown(f"{ui['provider_card_raion']}: {_field(provider['Raion'])}")
-                st.markdown(f"{ui['provider_card_hromada']}: {_field(provider[COL_HROMADA])}")
+                display_oblast = (
+                    provider.get(COL_VERIFIED_OBLAST)
+                    if is_filled(provider.get(COL_VERIFIED_OBLAST))
+                    else provider[COL_OBLAST]
+                )
+                display_raion = (
+                    provider.get(COL_VERIFIED_RAION)
+                    if is_filled(provider.get(COL_VERIFIED_RAION))
+                    else provider[COL_RAION]
+                )
+                display_hromada = (
+                    provider.get(COL_VERIFIED_HROMADA)
+                    if is_filled(provider.get(COL_VERIFIED_HROMADA))
+                    else provider[COL_HROMADA]
+                )
+                st.markdown(f"{ui['provider_card_oblast']}: {_field(display_oblast)}")
+                st.markdown(f"{ui['provider_card_raion']}: {_field(display_raion)}")
+                st.markdown(f"{ui['provider_card_hromada']}: {_field(display_hromada)}")
                 st.markdown(f"{ui['provider_card_ownership']}: {ownership_label_for_value(provider[COL_OWNERSHIP], lang)}")
                 st.markdown(f"{ui['provider_card_nhsu']}: {_field(provider[COL_NHSU])}")
                 st.markdown(f"{ui['provider_card_service_format']}: {_field(provider.get('Service format (inpatient/outpatient/home/day care)'))}")
@@ -1495,19 +1567,22 @@ def main() -> None:
                 ui["unmatched_col_ownership"],
             ]
         ]
-        with st.expander(
-            ui["unmatched_expander"].format(
-                groups=len(unmatched),
-                rows=int(unmatched["total"].sum()) if not unmatched.empty else 0,
-            )
-        ):
-            st.dataframe(unmatched_display, width="stretch")
-            st.download_button(
-                label=ui["download_unmatched_button"],
-                data=unmatched_display.to_csv(index=False).encode("utf-8-sig"),
-                file_name=f"unmatched_hromadas_{lang}.csv",
-                mime="text/csv",
-            )
+        if unmatched.empty:
+            st.success(ui["all_mapped_note"])
+        else:
+            with st.expander(
+                ui["unmatched_expander"].format(
+                    groups=len(unmatched),
+                    rows=int(unmatched["total"].sum()),
+                )
+            ):
+                st.dataframe(unmatched_display, width="stretch")
+                st.download_button(
+                    label=ui["download_unmatched_button"],
+                    data=unmatched_display.to_csv(index=False).encode("utf-8-sig"),
+                    file_name=f"unmatched_hromadas_{lang}.csv",
+                    mime="text/csv",
+                )
 
 
 if __name__ == "__main__":
