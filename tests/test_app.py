@@ -32,6 +32,16 @@ class OwnershipNormalizationTests(unittest.TestCase):
         filtered = self.df[self.df["_ownership_key"].isin(selected)]
         self.assertEqual(len(filtered), len(self.df))
 
+    def test_service_type_flags_use_explicit_source_fields(self):
+        expected_medical = self.df[app.COL_NHSU].apply(app.is_filled)
+        expected_social = self.df[app.COL_SOCIAL_CODE].apply(app.is_filled) | self.df[
+            app.COL_NSSU
+        ].apply(app.is_filled)
+        pd.testing.assert_series_equal(self.df["_is_medical"], expected_medical, check_names=False)
+        pd.testing.assert_series_equal(self.df["_is_social"], expected_social, check_names=False)
+        self.assertEqual(int(expected_medical.sum()), 1384)
+        self.assertEqual(int(expected_social.sum()), 4206)
+
     def test_raw_table_contains_only_the_21_source_columns(self):
         display = app.prepare_source_display(self.df)
         self.assertEqual(len(display.columns), 21)
@@ -68,6 +78,9 @@ class GeographyResolutionTests(unittest.TestCase):
     def setUpClass(cls):
         source = app.load_excel_data(str(app.EXCEL_PATH))
         cls.geo = app.load_geojson(str(app.GEOJSON_PATH))
+        cls.oblast_geo = app.complete_oblast_boundaries(
+            app.load_oblast_geojson(str(app.OBLAST_GEOJSON_PATH)), cls.geo
+        )
         cls.df = app.resolve_facility_geography(source, cls.geo)
         cls.geocoded = app.geocode_facilities(cls.df, cls.geo)
         cls.features_by_id = {
@@ -78,6 +91,27 @@ class GeographyResolutionTests(unittest.TestCase):
     def test_geo_ids_are_unique(self):
         geo_ids = list(self.features_by_id)
         self.assertEqual(len(geo_ids), len(self.geo["features"]))
+
+    def test_oblast_boundaries_cover_every_oblast(self):
+        expected = {feature["properties"]["oblast_ua"] for feature in self.geo["features"]}
+        boundaries = self.oblast_geo["features"]
+        self.assertEqual({feature["properties"]["oblast_ua"] for feature in boundaries}, expected)
+        self.assertTrue(
+            all(feature["geometry"]["type"] in {"Polygon", "MultiPolygon"} for feature in boundaries)
+        )
+        self.assertTrue(all(feature["geometry"]["coordinates"] for feature in boundaries))
+
+    def test_kyiv_city_is_distinct_and_has_no_social_service_rows(self):
+        kyiv_geo_ids = {
+            feature["properties"]["geo_id"]
+            for feature in self.geo["features"]
+            if feature["properties"]["oblast_ua"] == "Київ"
+        }
+        kyiv = self.df[self.df["_geo_id"].isin(kyiv_geo_ids)]
+        self.assertEqual(len(kyiv), 154)
+        self.assertEqual(int(kyiv["_is_medical"].sum()), 154)
+        self.assertEqual(int(kyiv["_is_social"].sum()), 0)
+        self.assertEqual(app.display_oblast_name("Київ", "uk", app.UI_TEXTS["uk"]), "Київ — місто")
 
     def test_current_workbook_maps_all_rows(self):
         status_counts = self.df["_match_status"].value_counts().to_dict()

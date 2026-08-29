@@ -22,6 +22,7 @@ EXCEL_PATH = (
     / "NEW_Mapping_tracker_2506_verified.xlsx"
 )
 GEOJSON_PATH = BASE_DIR / "ukraine_hromadas.geojson"
+OBLAST_GEOJSON_PATH = BASE_DIR / "ukraine_oblasts.geojson"
 SHEET_NAME = "Provider Data"
 
 COL_HROMADA = "Hromada"
@@ -30,6 +31,8 @@ COL_RAION = "Raion"
 COL_ADDRESS = "Address"
 COL_PROVIDER_NAME = "Provider Name"
 COL_NHSU = "NHSU package (25/53/54)"
+COL_NSSU = "NSSU listing (Y/N + details)"
+COL_SOCIAL_CODE = "Code of social services"
 COL_OWNERSHIP = "Ownership / funding type (public / communal / private / NGO-charitable / donor / mixed)"
 COL_VERIFIED_OBLAST = "Verified Oblast"
 COL_VERIFIED_RAION = "Verified Raion"
@@ -73,13 +76,13 @@ HIGHLIGHT_COLOR = "#e11d48"  # акцентний колір контуру об
 
 # Колір точки на карті за формою власності (3 кольори + сірий для невказаних).
 OWNERSHIP_COLOR = {
-    "public": "blue",
-    "communal": "blue",
-    "private": "green",
-    "ngo-charitable": "orange",
-    "donor": "orange",
-    "mixed": "orange",
-    UNSPECIFIED_KEY: "gray",
+    "public": "#2a7f78",
+    "communal": "#2a7f78",
+    "private": "#e38b52",
+    "ngo-charitable": "#6b5ca5",
+    "donor": "#6b5ca5",
+    "mixed": "#6b5ca5",
+    UNSPECIFIED_KEY: "#8b9692",
 }
 # Порядок опцій у мультиселекті форми власності в сайдбарі.
 OWNERSHIP_LABEL_KEYS_ORDER = ["public", "communal", "private", "ngo-charitable", "donor", "mixed", UNSPECIFIED_KEY]
@@ -224,23 +227,30 @@ CITY_TO_HROMADA_MAPPING = {
 
 UI_TEXTS = {
     "uk": {
-        "app_title": "🗺️ Мапа надавачів послуг педіатричної реабілітації в Україні",
+        "app_title": "Педіатрична реабілітація в Україні",
+        "app_eyebrow": "REHAB MAPPING · VERIFIED DATA",
+        "app_subtitle": "Досліджуйте мережу медичних і соціальних надавачів — від огляду областей до окремої громади.",
+        "filter_header": "Фільтри карти",
+        "filter_hint": "Спочатку оберіть територію, потім уточніть тип надавача.",
         "lang_label": "Оберіть мову / Choose language",
-        "oblast_label": "Оберіть область",
-        "oblast_all": "Усі області",
+        "oblast_label": "Територія",
+        "oblast_all": "Вся Україна",
+        "kyiv_city_label": "Київ — місто",
         "hromada_select_label": "Оберіть громаду",
         "hromada_select_placeholder": "— не обрано —",
         "hromada_detail_header": "📋 Заклади в громаді",
         "hromada_detail_total": "Всього закладів: **{n}**",
         "facility_medical_tag": "🏥 Медичний",
         "facility_social_tag": "🤝 Соціальний",
+        "facility_both_tag": "Медичний + соціальний",
+        "facility_unclassified_tag": "Тип не визначено",
         "no_facilities_matched": "Немає зіставлених закладів у базі для цієї громади.",
         "facility_name_fallback": "Без назви",
-        "oblast_stats_header": "📊 Статистика по області",
+        "oblast_stats_header": "Обрана територія",
         "oblast_stats_hromadas": "Громад із закладами",
         "oblast_stats_total": "Усього закладів",
-        "oblast_stats_medical": "Медичних",
-        "oblast_stats_social": "Соціальних",
+        "oblast_stats_medical": "З пакетом НСЗУ",
+        "oblast_stats_social": "З кодом соцпослуги / НССУ",
         "provider_select_label": "Оберіть надавача",
         "provider_select_placeholder": "— не обрано —",
         "provider_card_header": "🏷️ Картка надавача",
@@ -258,6 +268,7 @@ UI_TEXTS = {
         "provider_card_volume": "Обсяг (пацієнтів/рік)",
         "show_boundaries_label": "Показувати межі громад",
         "layer_boundaries": "Межі громад",
+        "layer_oblast_boundaries": "Межі областей",
         "layer_highlight": "Обрана громада",
         "selected_hromada_caption": "🔴 Обрана громада: {name}",
         "ownership_filter_label": "Форма власності",
@@ -274,25 +285,33 @@ UI_TEXTS = {
         "legend_private": "Приватні",
         "legend_ngo_donor": "ГО / Благодійні / Донорські",
         "legend_unspecified": "Не вказано",
-        "tab_map": "🗺️ Карта громад",
-        "tab_data": "📊 Сирі дані (Таблиця)",
-        "view_mode_label": "Режим карти",
-        "view_mode_polygons": "🗺️ Карта громад (полігони)",
-        "view_mode_points": "📍 Карта точок (надавачі послуг)",
+        "tab_map": "Карта",
+        "tab_data": "Дані та методологія",
+        "view_mode_label": "Рівень огляду",
+        "view_mode_oblasts": "Області",
+        "view_mode_hromadas": "Громади",
+        "view_mode_points": "Надавачі",
+        "view_mode_oblasts_hint": "Контури областей і пропорційні маркери показують концентрацію надавачів.",
+        "view_mode_hromadas_hint": "Громади показані контурами; бірюзовий акцент означає наявність записів.",
+        "view_mode_points_hint": "Точки наближені до центру громади й не є адресною геолокацією.",
         "quality_header": "Покриття географічного зіставлення",
         "quality_source": "Записів у джерелі",
         "quality_mapped": "Показано на карті",
         "quality_unmatched": "Без полігона",
         "quality_note": "Усі раніше незматчені записи перевірено за КАТОТТГ; початкові поля джерела збережено без змін.",
         "kpi_total": "Закладів за фільтрами",
-        "kpi_medical": "Медичні заклади",
-        "kpi_social": "Соціальні заклади",
+        "kpi_medical": "З пакетом НСЗУ",
+        "kpi_social": "З кодом соцпослуги / НССУ",
         "kpi_hromadas": "Громад за фільтрами",
+        "service_definition": "Медичний = заповнений пакет НСЗУ. Соціальний = заповнений код соціальної послуги або запис НССУ. Категорії можуть перетинатися.",
+        "verification_badge": "100% записів мають перевірений полігон",
+        "data_date": "КАТОТТГ · 07.07.2026",
         "tooltip_hromada": "Громада:",
         "tooltip_total": "Всього закладів:",
         "tooltip_medical": "Медичних:",
         "tooltip_social": "Соціальних:",
         "tooltip_ownership": "Форма власності:",
+        "tooltip_oblast": "Область:",
         "legend_total": "Кількість закладів",
         "layer_choropleth": "Заклади за громадами",
         "layer_points": "📍 Заклади (наближені точки в межах громади)",
@@ -346,23 +365,30 @@ UI_TEXTS = {
         },
     },
     "en": {
-        "app_title": "🗺️ Map of Paediatric Rehabilitation Service Providers in Ukraine",
+        "app_title": "Paediatric rehabilitation in Ukraine",
+        "app_eyebrow": "REHAB MAPPING · VERIFIED DATA",
+        "app_subtitle": "Explore the network of medical and social providers — from the oblast overview to an individual hromada.",
+        "filter_header": "Map filters",
+        "filter_hint": "Choose a territory first, then refine the provider type.",
         "lang_label": "Оберіть мову / Choose language",
-        "oblast_label": "Select oblast",
-        "oblast_all": "All oblasts",
+        "oblast_label": "Territory",
+        "oblast_all": "All Ukraine",
+        "kyiv_city_label": "Kyiv — city",
         "hromada_select_label": "Select hromada",
         "hromada_select_placeholder": "— none selected —",
         "hromada_detail_header": "📋 Facilities in hromada",
         "hromada_detail_total": "Total facilities: **{n}**",
         "facility_medical_tag": "🏥 Medical",
         "facility_social_tag": "🤝 Social",
+        "facility_both_tag": "Medical + social",
+        "facility_unclassified_tag": "Type not classified",
         "no_facilities_matched": "No matched facilities in the database for this hromada.",
         "facility_name_fallback": "Unnamed",
-        "oblast_stats_header": "📊 Oblast statistics",
+        "oblast_stats_header": "Selected territory",
         "oblast_stats_hromadas": "Hromadas with facilities",
         "oblast_stats_total": "Total facilities",
-        "oblast_stats_medical": "Medical",
-        "oblast_stats_social": "Social",
+        "oblast_stats_medical": "With an NHSU package",
+        "oblast_stats_social": "With a social-service code / NSSU",
         "provider_select_label": "Select provider",
         "provider_select_placeholder": "— none selected —",
         "provider_card_header": "🏷️ Provider card",
@@ -380,6 +406,7 @@ UI_TEXTS = {
         "provider_card_volume": "Volume (patients/year)",
         "show_boundaries_label": "Show hromada boundaries",
         "layer_boundaries": "Hromada boundaries",
+        "layer_oblast_boundaries": "Oblast boundaries",
         "layer_highlight": "Selected hromada",
         "selected_hromada_caption": "🔴 Selected hromada: {name}",
         "ownership_filter_label": "Ownership type",
@@ -396,25 +423,33 @@ UI_TEXTS = {
         "legend_private": "Private",
         "legend_ngo_donor": "NGO / Charity / Donor",
         "legend_unspecified": "Not specified",
-        "tab_map": "🗺️ Hromada Map",
-        "tab_data": "📊 Raw Data (Table)",
-        "view_mode_label": "Map view",
-        "view_mode_polygons": "🗺️ Hromada map (polygons)",
-        "view_mode_points": "📍 Points map (service providers)",
+        "tab_map": "Map",
+        "tab_data": "Data and methodology",
+        "view_mode_label": "View level",
+        "view_mode_oblasts": "Oblasts",
+        "view_mode_hromadas": "Hromadas",
+        "view_mode_points": "Providers",
+        "view_mode_oblasts_hint": "Oblast outlines and proportional markers show provider concentration.",
+        "view_mode_hromadas_hint": "Hromadas use outlines; teal accents indicate records are present.",
+        "view_mode_points_hint": "Points are approximated inside each hromada and are not address geocoding.",
         "quality_header": "Geographic matching coverage",
         "quality_source": "Source records",
         "quality_mapped": "Shown on map",
         "quality_unmatched": "Without a polygon",
         "quality_note": "All previously unmatched records were verified against KATOTTG; original source fields remain unchanged.",
         "kpi_total": "Facilities after filters",
-        "kpi_medical": "Medical facilities",
-        "kpi_social": "Social facilities",
+        "kpi_medical": "With an NHSU package",
+        "kpi_social": "With a social-service code / NSSU",
         "kpi_hromadas": "Hromadas after filters",
+        "service_definition": "Medical = an NHSU package is present. Social = a social-service code or NSSU record is present. Categories may overlap.",
+        "verification_badge": "100% of records have a verified polygon",
+        "data_date": "KATOTTG · 07 Jul 2026",
         "tooltip_hromada": "Hromada:",
         "tooltip_total": "Total facilities:",
         "tooltip_medical": "Medical:",
         "tooltip_social": "Social:",
         "tooltip_ownership": "Ownership type:",
+        "tooltip_oblast": "Oblast:",
         "legend_total": "Number of facilities",
         "layer_choropleth": "Facilities by hromada",
         "layer_points": "📍 Facilities (approximate points inside each hromada)",
@@ -596,6 +631,11 @@ def load_excel_data(path: str) -> pd.DataFrame:
     # Обчислені один раз тут, а не в кожному фільтрі/агрегації нижче — і для
     # групувань (compute_hromada_stats), і для інтерактивних фільтрів у сайдбарі.
     df["_is_medical"] = df[COL_NHSU].apply(is_filled)
+    # Соціальний надавач визначається прямою ознакою в джерелі, а не як
+    # арифметичний залишок ``total - medical``. Це важливо для двох записів,
+    # де присутні і пакет НСЗУ, і код соціальної послуги, та двох записів без
+    # жодної з цих ознак.
+    df["_is_social"] = df[COL_SOCIAL_CODE].apply(is_filled) | df[COL_NSSU].apply(is_filled)
     df["_ownership_key"] = df[COL_OWNERSHIP].apply(canonical_ownership_key)
     return df
 
@@ -627,6 +667,50 @@ def load_geojson(path: str) -> dict:
         props["hromada_type"] = detect_hromada_type(hromada_en)
         props["geo_id"] = f"geo:{props.get('id', index)}"
     return geo
+
+
+@st.cache_data(show_spinner=False)
+def load_oblast_geojson(path: str) -> dict:
+    with open(path, encoding="utf-8") as file:
+        oblast_geo = json.load(file)
+    aliases = {"Автономна Республіка Крим": "Автономна республіка Крим"}
+    for feature in oblast_geo["features"]:
+        raw_name = feature["properties"].get("region", "")
+        oblast_ua = aliases.get(raw_name, raw_name)
+        feature["properties"]["oblast_ua"] = oblast_ua
+        feature["properties"]["oblast_en"] = transliterate_ua_to_en(oblast_ua)
+    return oblast_geo
+
+
+def complete_oblast_boundaries(oblast_geo: dict, hromada_geo: dict) -> dict:
+    """Узгоджує регіональний GeoJSON з переліком регіонів у громадському шарі.
+
+    Джерельний ``regiony.geojson`` містить Севастополь, але не окремий Київ;
+    ``hromady.geojson`` — навпаки. Тому зайву фічу відсікаємо, а межу Києва
+    беремо з єдиної Київської міської громади в тому самому наборі громад.
+    """
+    expected = {feature["properties"]["oblast_ua"] for feature in hromada_geo["features"]}
+    features = [
+        feature
+        for feature in oblast_geo["features"]
+        if feature["properties"]["oblast_ua"] in expected
+    ]
+    present = {feature["properties"]["oblast_ua"] for feature in features}
+    for feature in hromada_geo["features"]:
+        oblast_ua = feature["properties"]["oblast_ua"]
+        if oblast_ua in expected - present:
+            features.append(
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "oblast_ua": oblast_ua,
+                        "oblast_en": feature["properties"]["oblast_en"],
+                    },
+                    "geometry": feature["geometry"],
+                }
+            )
+            present.add(oblast_ua)
+    return {"type": "FeatureCollection", "features": features}
 
 
 def resolve_facility_geography(df: pd.DataFrame, geo: dict) -> pd.DataFrame:
@@ -794,7 +878,7 @@ def compute_hromada_stats(df: pd.DataFrame) -> pd.DataFrame:
     for geo_id, group in df.dropna(subset=["_geo_id"]).groupby("_geo_id"):
         total = len(group)
         medical = int(group["_is_medical"].sum())
-        social = total - medical
+        social = int(group["_is_social"].sum())
         ownership_counts = group["_ownership_key"].value_counts().to_dict()
         # Список областей/районів, звідки походять рядки з цим ключем — потрібен
         # для ручної звірки колізій на кшталт "Городок" (Львівська vs Хмельницька).
@@ -854,7 +938,7 @@ def find_unmatched(df: pd.DataFrame) -> pd.DataFrame:
                 "match_status": match_status,
                 "total": total,
                 "medical": medical,
-                "social": total - medical,
+                "social": int(group["_is_social"].sum()),
                 "ownership_counts": group["_ownership_key"].value_counts().to_dict(),
                 "oblasts": "; ".join(sorted(group[COL_OBLAST].dropna().astype(str).str.strip().unique())),
                 "raions": "; ".join(sorted(group[COL_RAION].dropna().astype(str).str.strip().unique())),
@@ -1176,7 +1260,128 @@ def new_base_map() -> folium.Map:
     # ключ і показував водяний знак "API key required"). Використовується для
     # ОБОХ режимів карти (полігони і точки), щоб водяний знак не повернувся
     # десь одним випадковим забутим tiles=.
-    return folium.Map(location=UKRAINE_CENTER, zoom_start=6, tiles="OpenStreetMap")
+    m = folium.Map(location=UKRAINE_CENTER, zoom_start=6, tiles="OpenStreetMap")
+    # Приглушена підкладка залишає географічний контекст, але не конкурує з
+    # контурами областей і маркерами надавачів.
+    m.get_root().html.add_child(
+        folium.Element(
+            "<style>.leaflet-tile-pane{filter:saturate(.42) contrast(.92) brightness(1.06)}"
+            ".leaflet-container{font-family:Inter,Segoe UI,sans-serif;background:#e9ece8}"
+            ".region-count{background:#f2b84b;border:1px solid #173f43;border-radius:999px;"
+            "color:#102a2e;font-weight:800;font-size:11px;padding:2px 6px;box-shadow:none}</style>"
+        )
+    )
+    return m
+
+
+def display_oblast_name(oblast_ua: str, lang: str, ui: dict) -> str:
+    if oblast_ua == "Київ":
+        return ui["kyiv_city_label"]
+    return oblast_ua if lang == "uk" else transliterate_ua_to_en(oblast_ua)
+
+
+def oblast_stats(df: pd.DataFrame, geo: dict) -> list[dict]:
+    """Агрегація та центр маркерів на рівні областей для активних фільтрів."""
+    oblast_by_geo_id = {
+        feature["properties"]["geo_id"]: feature["properties"]["oblast_ua"]
+        for feature in geo["features"]
+    }
+    scoped = df[df["_geo_id"].notna()].copy()
+    scoped["_oblast_ua"] = scoped["_geo_id"].map(oblast_by_geo_id)
+    records = []
+    for oblast, group in scoped.groupby("_oblast_ua"):
+        records.append(
+            {
+                "oblast_ua": oblast,
+                "total": len(group),
+                "medical": int(group["_is_medical"].sum()),
+                "social": int(group["_is_social"].sum()),
+                "lat": float(group["lat"].mean()),
+                "lon": float(group["lon"].mean()),
+            }
+        )
+    return records
+
+
+def add_oblast_boundaries(
+    m: folium.Map,
+    boundaries: dict,
+    lang: str,
+    ui: dict,
+    visible_oblasts: set[str] | None = None,
+) -> None:
+    features = [
+        feature
+        for feature in boundaries["features"]
+        if visible_oblasts is None or feature["properties"]["oblast_ua"] in visible_oblasts
+    ]
+    name_field = "oblast_ua" if lang == "uk" else "oblast_en"
+    folium.GeoJson(
+        {"type": "FeatureCollection", "features": features},
+        style_function=lambda _: {
+            "color": "#173f43",
+            "weight": 2.4,
+            "opacity": 0.9,
+            "fillOpacity": 0,
+        },
+        highlight_function=lambda _: {
+            "color": "#e38b52",
+            "weight": 3.4,
+            "opacity": 1,
+            "fillOpacity": 0.035,
+        },
+        tooltip=folium.GeoJsonTooltip(fields=[name_field], aliases=[ui["tooltip_oblast"]], sticky=True),
+        name=ui["layer_oblast_boundaries"],
+        control=False,
+    ).add_to(m)
+
+
+def build_oblast_map(
+    geo: dict,
+    oblast_boundaries: dict,
+    facility_df: pd.DataFrame,
+    lang: str,
+    ui: dict,
+    selected_oblast: str | None = None,
+) -> folium.Map:
+    """Огляд областей: чисті контури + пропорційні маркери, без заливки."""
+    m = new_base_map()
+    visible = {selected_oblast} if selected_oblast is not None else None
+    add_oblast_boundaries(m, oblast_boundaries, lang, ui, visible)
+
+    for record in oblast_stats(facility_df, geo):
+        if visible is not None and record["oblast_ua"] not in visible:
+            continue
+        label = display_oblast_name(record["oblast_ua"], lang, ui)
+        popup = (
+            f"<b>{html.escape(label)}</b><br>"
+            f"{html.escape(ui['tooltip_total'])} {record['total']}<br>"
+            f"{html.escape(ui['tooltip_medical'])} {record['medical']}<br>"
+            f"{html.escape(ui['tooltip_social'])} {record['social']}"
+        )
+        radius = max(7, min(22, 5 + math.sqrt(record["total"]) * 0.65))
+        marker = folium.CircleMarker(
+            location=[record["lat"], record["lon"]],
+            radius=radius,
+            color="#173f43",
+            weight=1.5,
+            fill=True,
+            fill_color="#f2b84b",
+            fill_opacity=0.88,
+            popup=folium.Popup(popup, max_width=260),
+        ).add_to(m)
+        marker.add_child(
+            folium.Tooltip(str(record["total"]), permanent=True, direction="center", class_name="region-count")
+        )
+
+    if selected_oblast is None:
+        fit_map_to_bounds(m, union_bounds(geo["features"]))
+    else:
+        selected_features = [
+            feature for feature in geo["features"] if feature["properties"]["oblast_ua"] == selected_oblast
+        ]
+        fit_map_to_bounds(m, union_bounds(selected_features))
+    return m
 
 
 def _apply_focus_and_highlight(m: folium.Map, geo: dict, selected_geo_id: str | None, lang: str, ui: dict) -> None:
@@ -1214,45 +1419,42 @@ def _apply_focus_and_highlight(m: folium.Map, geo: dict, selected_geo_id: str | 
 
 
 def build_polygon_map(
-    geo: dict, agg: pd.DataFrame, lang: str, ui: dict, selected_geo_id: str | None = None
+    geo: dict,
+    agg: pd.DataFrame,
+    lang: str,
+    ui: dict,
+    selected_geo_id: str | None = None,
+    oblast_boundaries: dict | None = None,
 ) -> folium.Map:
-    """Режим 1: хороплет громад за кількістю закладів + тултип зі статистикою.
-
-    Якщо обрано конкретну громаду (з каскадного селектора в сайдбарі) — карта
-    фокусується на ній (fit_bounds) і додає окремий контурний шар поверх
-    хороплету (товща лінія акцентного кольору), бо стилізувати єдину фічу
-    всередині вбудованого folium.Choropleth напряму неможливо.
-    """
+    """Контурна карта громад без суцільної кольорової заливки."""
     m = new_base_map()
-
-    # Свіжий per-render мердж статистики (agg тут може бути вже відфільтрованим
-    # за формою власності/НСЗУ) у properties полігонів — без мутації кешованого
-    # geo, тож функція лишається дешевою і безпечною для повторних викликів.
     name_field = "hromada_ua" if lang == "uk" else "hromada_en"
     stats_by_key = agg.set_index("geo_id").to_dict("index")
+    view_features = []
     for feature in geo["features"]:
-        props = feature["properties"]
+        props = dict(feature["properties"])
         stats = stats_by_key.get(props["geo_id"], {"total": 0, "medical": 0, "social": 0, "ownership_counts": {}})
         props["total"] = int(stats["total"])
         props["medical"] = int(stats["medical"])
         props["social"] = int(stats["social"])
         props["ownership_display"] = format_ownership_str(stats.get("ownership_counts", {}), lang)
+        view_features.append({"type": "Feature", "properties": props, "geometry": feature["geometry"]})
 
-    choropleth = folium.Choropleth(
-        geo_data=geo,
-        data=agg,
-        columns=["geo_id", "total"],
-        key_on="feature.properties.geo_id",
-        fill_color="YlOrRd",
-        fill_opacity=0.75,
-        line_opacity=0.3,
-        nan_fill_color="lightgray",
-        legend_name=ui["legend_total"],
-        name=ui["layer_choropleth"],
-    ).add_to(m)
-
-    choropleth.geojson.add_child(
-        folium.GeoJsonTooltip(
+    geo_layer = folium.GeoJson(
+        {"type": "FeatureCollection", "features": view_features},
+        style_function=lambda feature: {
+            "fillColor": "#73b8ad" if feature["properties"]["total"] else "#ffffff",
+            "fillOpacity": 0.09 if feature["properties"]["total"] else 0.015,
+            "color": "#38867e" if feature["properties"]["total"] else "#aeb8b5",
+            "weight": 1.05 if feature["properties"]["total"] else 0.55,
+            "opacity": 0.9,
+        },
+        highlight_function=lambda feature: {
+            "fillOpacity": 0.18 if feature["properties"]["total"] else 0.06,
+            "color": "#e38b52",
+            "weight": 2.4,
+        },
+        tooltip=folium.GeoJsonTooltip(
             fields=[name_field, "total", "medical", "social", "ownership_display"],
             aliases=[
                 ui["tooltip_hromada"],
@@ -1262,12 +1464,16 @@ def build_polygon_map(
                 ui["tooltip_ownership"],
             ],
             sticky=True,
-        )
-    )
+        ),
+        name=ui["layer_choropleth"],
+        control=False,
+    ).add_to(m)
+
+    if oblast_boundaries is not None:
+        visible_oblasts = {feature["properties"]["oblast_ua"] for feature in geo["features"]}
+        add_oblast_boundaries(m, oblast_boundaries, lang, ui, visible_oblasts)
 
     _apply_focus_and_highlight(m, geo, selected_geo_id, lang, ui)
-
-    folium.LayerControl().add_to(m)
     return m
 
 
@@ -1298,6 +1504,7 @@ def build_points_map(
     ui: dict,
     selected_geo_id: str | None = None,
     show_boundaries: bool = True,
+    oblast_boundaries: dict | None = None,
 ) -> folium.Map:
     """Режим 2: точки окремих закладів, кольорові за формою власності.
 
@@ -1317,6 +1524,10 @@ def build_points_map(
             name=ui["layer_boundaries"],
             control=False,
         ).add_to(m)
+
+    if oblast_boundaries is not None:
+        visible_oblasts = {feature["properties"]["oblast_ua"] for feature in geo_view["features"]}
+        add_oblast_boundaries(m, oblast_boundaries, lang, ui, visible_oblasts)
 
     rows = []
     for _, row in facility_df.iterrows():
@@ -1344,33 +1555,143 @@ def build_points_map(
     return m
 
 
+DASHBOARD_CSS = """
+<style>
+:root {
+  --ink: #102a2e;
+  --muted: #60716f;
+  --paper: #f4f1e9;
+  --card: #fffdf8;
+  --teal: #2a7f78;
+  --amber: #f2b84b;
+  --coral: #e38b52;
+  --line: #d8ddd8;
+}
+[data-testid="stAppViewContainer"] { background: var(--paper); color: var(--ink); }
+[data-testid="stHeader"] { background: rgba(244,241,233,.86); }
+[data-testid="stSidebar"] { background: #e7ece8; border-right: 1px solid #ccd6d1; }
+[data-testid="stSidebar"] > div { padding-top: 1.25rem; }
+.block-container { max-width: 1500px; padding-top: 1.6rem; padding-bottom: 3rem; }
+h1, h2, h3 { color: var(--ink); letter-spacing: -.025em; }
+.hero-shell {
+  position: relative; overflow: hidden; border-radius: 22px; padding: 34px 38px 30px;
+  background: var(--ink); color: #fffdf8; margin-bottom: 16px;
+  box-shadow: 0 16px 40px rgba(16,42,46,.12);
+}
+.hero-shell:after {
+  content: ""; position: absolute; right: -80px; top: -120px; width: 330px; height: 330px;
+  border-radius: 50%; border: 58px solid rgba(242,184,75,.17);
+}
+.hero-eyebrow { color: var(--amber); font-size: 12px; letter-spacing: .16em; font-weight: 800; }
+.hero-title { max-width: 820px; font-size: clamp(34px,4vw,58px); line-height: .98; font-weight: 760; margin: 14px 0 16px; }
+.hero-copy { max-width: 760px; color: #d8e2df; font-size: 17px; line-height: 1.55; }
+.status-row { display:flex; gap:10px; flex-wrap:wrap; margin-top:22px; }
+.status-chip { border:1px solid rgba(255,255,255,.18); border-radius:999px; padding:7px 11px; color:#edf4f2; font-size:12px; }
+.status-chip strong { color: #fff; }
+.filter-brand { font-size:12px; letter-spacing:.14em; font-weight:800; color:var(--teal); margin-bottom:2px; }
+.filter-title { font-size:25px; line-height:1.1; font-weight:780; color:var(--ink); margin:3px 0 7px; }
+.filter-hint { color:var(--muted); font-size:13px; line-height:1.45; margin-bottom:15px; }
+.kpi-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:10px 0 14px; }
+.kpi-card { background:var(--card); border:1px solid var(--line); border-radius:15px; padding:16px 17px; min-height:105px; }
+.kpi-card:nth-child(1) { border-top:4px solid var(--ink); }
+.kpi-card:nth-child(2) { border-top:4px solid var(--teal); }
+.kpi-card:nth-child(3) { border-top:4px solid var(--coral); }
+.kpi-card:nth-child(4) { border-top:4px solid var(--amber); }
+.kpi-value { font-size:31px; line-height:1; font-weight:790; color:var(--ink); }
+.kpi-label { margin-top:9px; color:var(--muted); font-size:12px; line-height:1.35; }
+.method-note { color:var(--muted); font-size:12px; margin:0 0 13px; }
+[data-testid="stTabs"] [data-baseweb="tab-list"] { gap:8px; }
+[data-testid="stTabs"] [data-baseweb="tab"] { border-radius:999px; padding:9px 16px; background:#e6ebe7; }
+[data-testid="stTabs"] [aria-selected="true"] { background:var(--ink); color:white; }
+[data-testid="stIFrame"] { border-radius:18px; overflow:hidden; border:1px solid var(--line); }
+[data-testid="stExpander"], [data-testid="stVerticalBlockBorderWrapper"] { border-color:var(--line) !important; }
+@media (max-width: 900px) {
+  .hero-shell { padding:26px 22px; border-radius:16px; }
+  .kpi-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+</style>
+"""
+
+
+def render_hero(ui: dict, source_count: int, mapped_count: int) -> None:
+    st.markdown(
+        f"""
+        <section class="hero-shell">
+          <div class="hero-eyebrow">{html.escape(ui['app_eyebrow'])}</div>
+          <div class="hero-title">{html.escape(ui['app_title'])}</div>
+          <div class="hero-copy">{html.escape(ui['app_subtitle'])}</div>
+          <div class="status-row">
+            <span class="status-chip"><strong>{mapped_count:,}</strong> / {source_count:,} · {html.escape(ui['verification_badge'])}</span>
+            <span class="status-chip">{html.escape(ui['data_date'])}</span>
+          </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_kpis(ui: dict, total: int, medical: int, social: int, hromadas: int) -> None:
+    cards = [
+        (total, ui["kpi_total"]),
+        (medical, ui["kpi_medical"]),
+        (social, ui["kpi_social"]),
+        (hromadas, ui["kpi_hromadas"]),
+    ]
+    markup = "".join(
+        f'<div class="kpi-card"><div class="kpi-value">{value:,}</div>'
+        f'<div class="kpi-label">{html.escape(label)}</div></div>'
+        for value, label in cards
+    )
+    st.markdown(f'<div class="kpi-grid">{markup}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="method-note">{html.escape(ui["service_definition"])}</div>', unsafe_allow_html=True)
+
+
+def facility_service_tag(row: pd.Series, ui: dict) -> str:
+    medical = bool(row["_is_medical"])
+    social = bool(row["_is_social"])
+    if medical and social:
+        return ui["facility_both_tag"]
+    if medical:
+        nhsu_value = row[COL_NHSU]
+        suffix = f" ({str(nhsu_value).strip()})" if is_filled(nhsu_value) else ""
+        return f"{ui['facility_medical_tag']}{suffix}"
+    if social:
+        return ui["facility_social_tag"]
+    return ui["facility_unclassified_tag"]
+
+
 def main() -> None:
-    st.set_page_config(page_title="Мапа надавачів послуг реабілітації", layout="wide")
+    st.set_page_config(
+        page_title="Rehab Mapping Ukraine",
+        page_icon="◉",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+    st.markdown(DASHBOARD_CSS, unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="filter-brand">SPARC · UKRAINE</div>', unsafe_allow_html=True)
 
     lang_choice = st.sidebar.radio(
         UI_TEXTS["uk"]["lang_label"],
         ["🇺🇦 Українська", "🇬🇧 English"],
         index=0,
+        horizontal=True,
     )
     lang = "uk" if "Українська" in lang_choice else "en"
     ui = UI_TEXTS[lang]
-
-    st.title(ui["app_title"])
+    st.sidebar.markdown(
+        f'<div class="filter-title">{html.escape(ui["filter_header"])}</div>'
+        f'<div class="filter-hint">{html.escape(ui["filter_hint"])}</div>',
+        unsafe_allow_html=True,
+    )
 
     df, geo, agg, unmatched = prepare_data(str(EXCEL_PATH), str(GEOJSON_PATH))
-
-    st.caption(f"**{ui['quality_header']}**")
-    quality_source, quality_mapped, quality_unmatched = st.columns(3)
+    oblast_geo = complete_oblast_boundaries(load_oblast_geojson(str(OBLAST_GEOJSON_PATH)), geo)
     mapped_count = int(df["_geo_id"].notna().sum())
-    unmatched_count = len(df) - mapped_count
-    quality_source.metric(ui["quality_source"], len(df))
-    quality_mapped.metric(ui["quality_mapped"], mapped_count)
-    quality_unmatched.metric(ui["quality_unmatched"], unmatched_count)
-    st.caption(ui["quality_note"])
+    render_hero(ui, len(df), mapped_count)
 
     oblasts_ua = sorted({f["properties"]["oblast_ua"] for f in geo["features"] if f["properties"]["oblast_ua"]})
     oblast_display = {
-        ua: (ua if lang == "uk" else transliterate_ua_to_en(ua)) for ua in oblasts_ua
+        ua: display_oblast_name(ua, lang, ui) for ua in oblasts_ua
     }
     selected_oblast = st.sidebar.selectbox(
         ui["oblast_label"],
@@ -1448,11 +1769,7 @@ def main() -> None:
                     name = row[COL_PROVIDER_NAME]
                     name = str(name).strip() if is_filled(name) else ui["facility_name_fallback"]
                     ownership = ownership_label_for_value(row[COL_OWNERSHIP], lang)
-                    nhsu_value = row[COL_NHSU]
-                    if is_filled(nhsu_value):
-                        tag = f"{ui['facility_medical_tag']} ({str(nhsu_value).strip()})"
-                    else:
-                        tag = ui["facility_social_tag"]
+                    tag = facility_service_tag(row, ui)
                     st.markdown(f"- **{name}** — {ownership} · {tag}")
 
         # --- Вибір конкретного надавача в межах обраної громади ---
@@ -1510,29 +1827,62 @@ def main() -> None:
     tab1, tab2 = st.tabs([ui["tab_map"], ui["tab_data"]])
 
     with tab1:
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric(ui["kpi_total"], int(agg_view["total"].sum()) if not agg_view.empty else 0)
-        col2.metric(ui["kpi_medical"], int(agg_view["medical"].sum()) if not agg_view.empty else 0)
-        col3.metric(ui["kpi_social"], int(agg_view["social"].sum()) if not agg_view.empty else 0)
-        col4.metric(ui["kpi_hromadas"], int((agg_view["total"] > 0).sum()) if not agg_view.empty else 0)
+        render_kpis(
+            ui,
+            int(agg_view["total"].sum()) if not agg_view.empty else 0,
+            int(agg_view["medical"].sum()) if not agg_view.empty else 0,
+            int(agg_view["social"].sum()) if not agg_view.empty else 0,
+            int((agg_view["total"] > 0).sum()) if not agg_view.empty else 0,
+        )
 
         view_mode = st.radio(
             ui["view_mode_label"],
-            options=["polygons", "points"],
-            format_func=lambda v: ui["view_mode_polygons"] if v == "polygons" else ui["view_mode_points"],
+            options=["points", "oblasts", "hromadas"],
+            format_func=lambda value: {
+                "points": ui["view_mode_points"],
+                "oblasts": ui["view_mode_oblasts"],
+                "hromadas": ui["view_mode_hromadas"],
+            }[value],
             horizontal=True,
         )
+        st.caption(ui[f"view_mode_{view_mode}_hint"])
         show_boundaries = False
         if view_mode == "points":
             show_boundaries = st.checkbox(ui["show_boundaries_label"], value=False)
 
-        if view_mode == "polygons":
-            m = build_polygon_map(geo_view, agg_view, lang, ui, selected_geo_id)
+        if view_mode == "oblasts":
+            m = build_oblast_map(
+                geo,
+                oblast_geo,
+                df_filtered,
+                lang,
+                ui,
+                None if selected_oblast is ALL_OBLASTS else selected_oblast,
+            )
+        elif view_mode == "hromadas":
+            m = build_polygon_map(
+                geo_view,
+                agg_view,
+                lang,
+                ui,
+                selected_geo_id,
+                oblast_geo,
+            )
         else:
-            m = build_points_map(df_filtered, geo_view, lang, ui, selected_geo_id, show_boundaries)
-        st_folium(m, width=None, height=700, returned_objects=[])
+            m = build_points_map(
+                df_filtered,
+                geo_view,
+                lang,
+                ui,
+                selected_geo_id,
+                show_boundaries,
+                oblast_geo,
+            )
+        st_folium(m, width=None, height=680, returned_objects=[])
 
     with tab2:
+        st.info(ui["quality_note"])
+        st.caption(ui["service_definition"])
         df_display = prepare_source_display(df).rename(columns=ui["columns"])
         st.dataframe(df_display, width="stretch")
 
