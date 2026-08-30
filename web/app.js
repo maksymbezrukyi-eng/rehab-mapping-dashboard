@@ -4,20 +4,28 @@ const number = new Intl.NumberFormat("uk-UA");
 
 const state = {
   hromadas: [], providers: [], metadata: {}, featureById: new Map(),
-  selectedId: null, filtered: [],
+  selectedId: null, filtered: [], filteredIds: null, providerMarkers: [],
   layers: { boundaries: true, providers: true, distance: false },
 };
 
 const controls = {
   oblast: $("#oblast"), raion: $("#raion"), service: $("#service"),
   raionDistance: $("#raion-distance"), oblastDistance: $("#oblast-distance"),
-  sort: $("#sort-candidates"), status: $("#map-status"),
+  search: $("#candidate-search"), profile: $("#candidate-profile"),
+  remoteness: $("#candidate-remoteness"), sort: $("#sort-candidates"),
+  status: $("#map-status"),
 };
 
-const map = L.map("map", { zoomControl: false, minZoom: 5, maxZoom: 13, preferCanvas: true }).setView([48.6, 31.2], 6);
+const map = L.map("map", {
+  zoomControl: false, minZoom: 5, maxZoom: 13, preferCanvas: true,
+  zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false,
+  maxBounds: [[43.2, 18.0], [53.2, 44.5]], maxBoundsViscosity: 1,
+}).setView([48.6, 31.2], 6);
 L.control.zoom({ position: "bottomleft" }).addTo(map);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 18, attribution: "&copy; OpenStreetMap contributors",
+  noWrap: true, detectRetina: false, updateWhenIdle: true,
+  updateWhenZooming: false, keepBuffer: 4, crossOrigin: true,
 }).addTo(map);
 
 const communityLayer = L.geoJSON(null, {
@@ -65,7 +73,7 @@ function distanceColor(value) {
 
 function communityStyle(feature) {
   const p = feature.properties;
-  const visible = !state.filtered.length || state.filtered.some((item) => item.id === p.id);
+  const visible = state.filteredIds == null || state.filteredIds.has(p.id);
   const selected = p.id === state.selectedId;
   return {
     color: selected ? "#d14d35" : "#2b716a",
@@ -91,6 +99,25 @@ function densityMatches(item) {
   return true;
 }
 
+function quickFilterMatches(item) {
+  const query = controls.search.value.trim().toLocaleLowerCase("uk");
+  if (query) {
+    const haystack = `${item.name} ${item.raion} ${item.oblast}`.toLocaleLowerCase("uk");
+    if (!haystack.includes(query)) return false;
+  }
+  const profile = controls.profile.value;
+  if (profile === "empty" && item.total !== 0) return false;
+  if (profile === "noMedical" && item.medical !== 0) return false;
+  if (profile === "noSocial" && item.social !== 0) return false;
+  if (profile === "both" && (item.medical === 0 || item.social === 0)) return false;
+  const remoteness = controls.remoteness.value;
+  if (remoteness === "raion30" && (item.distanceRaionKm == null || item.distanceRaionKm < 30)) return false;
+  if (remoteness === "raion60" && (item.distanceRaionKm == null || item.distanceRaionKm < 60)) return false;
+  if (remoteness === "oblast100" && (item.distanceOblastKm == null || item.distanceOblastKm < 100)) return false;
+  if (remoteness === "oblast150" && (item.distanceOblastKm == null || item.distanceOblastKm < 150)) return false;
+  return true;
+}
+
 function applyFilters({ fit = false } = {}) {
   const oblast = controls.oblast.value;
   const raion = controls.raion.value;
@@ -101,18 +128,19 @@ function applyFilters({ fit = false } = {}) {
     if (raion !== "all" && item.raion !== raion) return false;
     if (minRaion > 0 && (item.distanceRaionKm == null || item.distanceRaionKm < minRaion)) return false;
     if (minOblast > 0 && (item.distanceOblastKm == null || item.distanceOblastKm < minOblast)) return false;
-    return densityMatches(item);
+    return densityMatches(item) && quickFilterMatches(item);
   });
+  state.filteredIds = new Set(state.filtered.map((item) => item.id));
   communityLayer.setStyle(communityStyle);
-  renderProviders(); renderMetrics(); renderScatter(); renderTable();
-  controls.status.textContent = `${number.format(state.filtered.length)} громад · ${number.format(filteredProviders().length)} надавачів`;
+  const providers = filteredProviders();
+  renderProviders(providers); renderMetrics(); renderScatter(); renderTable();
+  controls.status.textContent = `${number.format(state.filtered.length)} громад · ${number.format(providers.length)} надавачів`;
   if (fit) fitActiveTerritory();
 }
 
 function filteredProviders() {
-  const ids = new Set(state.filtered.map((item) => item.id));
   return state.providers.filter((provider) => {
-    if (!ids.has(provider.hromadaId)) return false;
+    if (!state.filteredIds.has(provider.hromadaId)) return false;
     if (controls.service.value === "medical") return provider.medical;
     if (controls.service.value === "social") return provider.social;
     return true;
@@ -126,24 +154,26 @@ function providerKind(provider) {
   return "other";
 }
 
-function renderProviders() {
+function createProviderMarker(provider) {
+  const kind = providerKind(provider);
+  const icon = L.divIcon({
+    className: "", html: `<span class="provider-marker provider-marker--${kind}" style="display:block;width:10px;height:10px"></span>`,
+    iconSize: [10, 10], iconAnchor: [5, 5],
+  });
+  const marker = L.marker([provider.lat, provider.lon], { icon, keyboard: true });
+  const hromada = state.featureById.get(provider.hromadaId)?.properties;
+  marker.bindPopup(
+    `<strong>${escapeHtml(provider.name)}</strong><br><span>${escapeHtml(hromada ? shortName(hromada.name) : "")}</span><br>` +
+    `<small>${provider.medical ? "Медичний" : ""}${provider.medical && provider.social ? " + " : ""}${provider.social ? "Соціальний" : ""}</small><br>` +
+    `<small>Точка наближена в межах громади</small>`,
+  );
+  return marker;
+}
+
+function renderProviders(providers = filteredProviders()) {
   providerLayer.clearLayers();
   if (!state.layers.providers) return;
-  const markers = filteredProviders().map((provider) => {
-    const kind = providerKind(provider);
-    const icon = L.divIcon({
-      className: "", html: `<span class="provider-marker provider-marker--${kind}" style="display:block;width:10px;height:10px"></span>`,
-      iconSize: [10, 10], iconAnchor: [5, 5],
-    });
-    const marker = L.marker([provider.lat, provider.lon], { icon, keyboard: true });
-    const hromada = state.featureById.get(provider.hromadaId)?.properties;
-    marker.bindPopup(
-      `<strong>${escapeHtml(provider.name)}</strong><br><span>${escapeHtml(hromada ? shortName(hromada.name) : "")}</span><br>` +
-      `<small>${provider.medical ? "Медичний" : ""}${provider.medical && provider.social ? " + " : ""}${provider.social ? "Соціальний" : ""}</small><br>` +
-      `<small>Точка наближена в межах громади</small>`,
-    );
-    return marker;
-  });
+  const markers = providers.map((provider) => state.providerMarkers[provider._markerIndex]);
   providerLayer.addLayers(markers);
 }
 
@@ -280,14 +310,18 @@ function bindControls() {
   controls.oblast.addEventListener("change", () => { updateRaions(); applyFilters({ fit: true }); });
   controls.raion.addEventListener("change", () => applyFilters({ fit: true }));
   controls.service.addEventListener("change", () => applyFilters());
+  controls.search.addEventListener("input", scheduleFilters);
+  controls.profile.addEventListener("change", () => applyFilters());
+  controls.remoteness.addEventListener("change", () => applyFilters());
   controls.sort.addEventListener("change", renderTable);
   for (const input of $$('input[name="density"]')) input.addEventListener("change", () => applyFilters());
   for (const range of [controls.raionDistance, controls.oblastDistance]) {
     const output = $(`#${range.id}-value`);
-    range.addEventListener("input", () => { output.textContent = `від ${range.value} км`; applyFilters(); });
+    range.addEventListener("input", () => { output.textContent = `від ${range.value} км`; scheduleFilters(); });
   }
   $("#reset-filters").addEventListener("click", () => {
     controls.oblast.value = "all"; controls.raion.value = "all"; controls.service.value = "all";
+    controls.search.value = ""; controls.profile.value = "all"; controls.remoteness.value = "all";
     controls.raionDistance.value = 0; controls.oblastDistance.value = 0;
     $("#raion-distance-value").textContent = "від 0 км"; $("#oblast-distance-value").textContent = "від 0 км";
     $('input[name="density"][value="all"]').checked = true;
@@ -301,6 +335,12 @@ function bindControls() {
   $("#export-csv").addEventListener("click", exportCsv);
 }
 
+let filterTimer;
+function scheduleFilters() {
+  window.clearTimeout(filterTimer);
+  filterTimer = window.setTimeout(() => applyFilters(), 120);
+}
+
 async function initialise() {
   try {
     const responses = await Promise.all([
@@ -310,17 +350,23 @@ async function initialise() {
     if (!responses.every((response) => response.ok)) throw new Error("Частина даних недоступна");
     const [hromadaGeo, providers, oblastGeo, metadata] = await Promise.all(responses.map((response) => response.json()));
     state.hromadas = hromadaGeo.features.map((feature) => feature.properties);
-    state.providers = providers; state.metadata = metadata;
+    state.providers = providers.map((provider, index) => ({ ...provider, _markerIndex: index }));
+    state.metadata = metadata;
     state.featureById = new Map(hromadaGeo.features.map((feature) => [feature.properties.id, feature]));
+    state.providerMarkers = state.providers.map(createProviderMarker);
     communityLayer.addData(hromadaGeo); oblastLayer.addData(oblastGeo);
     const oblasts = [...new Set(state.hromadas.map((item) => item.oblast))].sort((a, b) => a.localeCompare(b, "uk"));
     controls.oblast.innerHTML = '<option value="all">Вся Україна</option>' + oblasts.map((oblast) => `<option value="${escapeHtml(oblast)}">${escapeHtml(oblast === "Київ" ? "Київ — місто" : oblast)}</option>`).join("");
     updateRaions(); bindControls(); applyFilters({ fit: true }); oblastLayer.bringToFront();
+    window.requestAnimationFrame(() => map.invalidateSize(false));
   } catch (error) {
     console.error(error); controls.status.textContent = "Не вдалося завантажити dashboard";
     controls.status.style.background = "#a64235";
     $("#table-footnote").textContent = "Спробуйте перезавантажити сторінку. Якщо проблема повторюється, перевірте останню збірку даних.";
   }
 }
+
+const mapResizeObserver = new ResizeObserver(() => map.invalidateSize(false));
+mapResizeObserver.observe($("#map"));
 
 initialise();

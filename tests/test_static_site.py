@@ -62,6 +62,30 @@ class StaticSiteTests(unittest.TestCase):
         self.assertIn("до районного центру", html)
         self.assertIn("до обласного центру", html)
 
+    def test_static_ui_has_multiple_candidate_filters(self):
+        html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('id="candidate-search"', html)
+        self.assertIn('id="candidate-profile"', html)
+        self.assertIn('id="candidate-remoteness"', html)
+        self.assertIn('<option value="medical">Медичні</option>', html)
+        self.assertIn('<option value="social">Соціальні</option>', html)
+
+    def test_removed_intro_and_verification_badge_stay_removed(self):
+        html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("Де доступ до реабілітації потребує уваги?", html)
+        self.assertNotIn("записів перевірено", html)
+
+    def test_map_has_rendering_safeguards(self):
+        html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+        self.assertIn("leaflet@1.9.4/dist/leaflet.css", html)
+        self.assertNotIn("sha256-p4NxAo", html)
+        self.assertIn("ResizeObserver", script)
+        self.assertIn("map.invalidateSize", script)
+        self.assertIn("updateWhenZooming: false", script)
+        self.assertNotIn("grayscale(", styles)
+
 
 if __name__ == "__main__":
     unittest.main()

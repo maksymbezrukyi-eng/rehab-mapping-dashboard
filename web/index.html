@@ -20,8 +20,6 @@
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIINfQ3ynhMZJOZ6RJeWgB0QZUXNM9s+7Y="
-      crossorigin=""
     />
     <link
       rel="stylesheet"
@@ -46,18 +44,10 @@
         Робочий простір для пошуку громад із різною насиченістю послугами та
         віддаленістю від адміністративних центрів.
       </p>
-      <span class="data-state"><i></i> 5 590 записів перевірено</span>
     </header>
 
     <main id="top" class="workspace">
       <aside class="filters" aria-label="Фільтри карти">
-        <div class="eyebrow">Фокус дослідження</div>
-        <h1>Де доступ до реабілітації потребує уваги?</h1>
-        <p class="lead">
-          Порівнюйте громади за присутністю надавачів і відстанню до районного
-          та обласного центрів.
-        </p>
-
         <div class="filter-group">
           <label for="oblast">Область</label>
           <select id="oblast">
@@ -75,9 +65,9 @@
         <div class="filter-group">
           <label for="service">Послуги</label>
           <select id="service">
-            <option>Усі надавачі</option>
-            <option>Медичні</option>
-            <option>Соціальні</option>
+            <option value="all">Усі надавачі</option>
+            <option value="medical">Медичні</option>
+            <option value="social">Соціальні</option>
           </select>
         </div>
 
@@ -174,8 +164,34 @@
                 <div class="eyebrow">Громади за фільтрами</div>
                 <h2 id="candidate-title">Кандидати для аналізу</h2>
               </div>
-              <div class="table-actions">
-                <label for="sort-candidates">Сортувати</label>
+            </div>
+            <div class="candidate-filters" aria-label="Швидкі фільтри кандидатів">
+              <label class="candidate-filter candidate-filter--search" for="candidate-search">
+                <span>Пошук</span>
+                <input id="candidate-search" type="search" placeholder="Назва громади, район або область" autocomplete="off" />
+              </label>
+              <label class="candidate-filter" for="candidate-profile">
+                <span>Профіль послуг</span>
+                <select id="candidate-profile">
+                  <option value="all">Будь-який профіль</option>
+                  <option value="empty">Без надавачів</option>
+                  <option value="noMedical">Без медичних</option>
+                  <option value="noSocial">Без соціальних</option>
+                  <option value="both">Є медичні й соціальні</option>
+                </select>
+              </label>
+              <label class="candidate-filter" for="candidate-remoteness">
+                <span>Віддаленість</span>
+                <select id="candidate-remoteness">
+                  <option value="all">Будь-яка відстань</option>
+                  <option value="raion30">30+ км до райцентру</option>
+                  <option value="raion60">60+ км до райцентру</option>
+                  <option value="oblast100">100+ км до облцентру</option>
+                  <option value="oblast150">150+ км до облцентру</option>
+                </select>
+              </label>
+              <label class="candidate-filter" for="sort-candidates">
+                <span>Сортувати</span>
                 <select id="sort-candidates">
                   <option value="oblastDistanceDesc">Віддалені від області</option>
                   <option value="raionDistanceDesc">Віддалені від району</option>
@@ -183,8 +199,8 @@
                   <option value="providersDesc">Більше надавачів</option>
                   <option value="nameAsc">За назвою</option>
                 </select>
-                <button id="export-csv" class="export-button" type="button">Завантажити CSV</button>
-              </div>
+              </label>
+              <button id="export-csv" class="export-button" type="button">Завантажити CSV</button>
             </div>
             <div class="table-wrap">
               <table>
