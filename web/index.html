@@ -33,48 +33,52 @@
   </head>
   <body>
     <header class="topbar">
-      <a class="identity" href="#top" aria-label="На початок сторінки">
+      <a class="identity" href="#top" aria-label="На початок сторінки" data-i18n-aria="homeLabel">
         <span class="identity__mark">RA</span>
         <span>
           <strong>Rehab Access Map</strong>
-          <small>аналіз громад України</small>
+          <small data-i18n="identitySubtitle">аналіз громад України</small>
         </span>
       </a>
-      <p class="topbar__purpose">
+      <p class="topbar__purpose" data-i18n="purpose">
         Робочий простір для пошуку громад із різною насиченістю послугами та
         віддаленістю від адміністративних центрів.
       </p>
+      <div class="language-switch" role="group" aria-label="Мова інтерфейсу" data-i18n-aria="languageLabel">
+        <button type="button" data-language="uk" aria-pressed="true">UA</button>
+        <button type="button" data-language="en" aria-pressed="false">EN</button>
+      </div>
     </header>
 
     <main id="top" class="workspace">
-      <aside class="filters" aria-label="Фільтри карти">
+      <aside class="filters" aria-label="Фільтри карти" data-i18n-aria="mapFiltersLabel">
         <div class="filter-group">
-          <label for="oblast">Область</label>
+          <label for="oblast" data-i18n="oblastLabel">Область</label>
           <select id="oblast">
             <option>Вся Україна</option>
           </select>
         </div>
 
         <div class="filter-group">
-          <label for="raion">Район</label>
+          <label for="raion" data-i18n="raionLabel">Район</label>
           <select id="raion" disabled>
             <option>Усі райони</option>
           </select>
         </div>
 
         <div class="filter-group">
-          <label for="service">Послуги</label>
+          <label for="service" data-i18n="serviceLabel">Послуги</label>
           <select id="service">
-            <option value="all">Усі надавачі</option>
-            <option value="medical">Медичні</option>
-            <option value="social">Соціальні</option>
+            <option value="all" data-i18n="serviceAll">Усі надавачі</option>
+            <option value="medical" data-i18n="medical">Медичні</option>
+            <option value="social" data-i18n="social">Соціальні</option>
           </select>
         </div>
 
         <fieldset class="filter-group density-filter">
-          <legend>Насиченість надавачами</legend>
+          <legend data-i18n="densityLabel">Насиченість надавачами</legend>
           <div class="segment-control">
-            <label><input type="radio" name="density" value="all" checked /><span>Усі</span></label>
+            <label><input type="radio" name="density" value="all" checked /><span data-i18n="all">Усі</span></label>
             <label><input type="radio" name="density" value="low" /><span>0–1</span></label>
             <label><input type="radio" name="density" value="mid" /><span>2–5</span></label>
             <label><input type="radio" name="density" value="high" /><span>6+</span></label>
@@ -83,7 +87,7 @@
 
         <div class="filter-group">
           <div class="label-row">
-            <label for="raion-distance">До районного центру</label>
+            <label for="raion-distance" data-i18n="toRaion">До районного центру</label>
             <output id="raion-distance-value">від 0 км</output>
           </div>
           <input id="raion-distance" type="range" min="0" max="180" value="0" />
@@ -91,57 +95,57 @@
 
         <div class="filter-group">
           <div class="label-row">
-            <label for="oblast-distance">До обласного центру</label>
+            <label for="oblast-distance" data-i18n="toOblast">До обласного центру</label>
             <output id="oblast-distance-value">від 0 км</output>
           </div>
           <input id="oblast-distance" type="range" min="0" max="400" value="0" />
         </div>
 
-        <button id="reset-filters" class="reset" type="button">Скинути фільтри</button>
+        <button id="reset-filters" class="reset" type="button" data-i18n="reset">Скинути фільтри</button>
 
         <div class="method-note">
-          <span>Методика</span>
-          Відстані рахуються по прямій між адміністративними центрами. Джерело
-          та точність показуються в картці кожної громади.
+          <span data-i18n="methodTitle">Методика</span>
+          <p data-i18n="methodText">Відстані рахуються по прямій між адміністративними центрами. Джерело
+          та точність показуються в картці кожної громади.</p>
         </div>
       </aside>
 
-      <section class="canvas" aria-label="Карта та аналітика">
-        <div class="metrics" aria-label="Ключові показники">
-          <article><span>Громад у фокусі</span><strong id="metric-hromadas">1 472</strong></article>
-          <article><span>Без надавачів</span><strong id="metric-empty">—</strong></article>
-          <article><span>Медичні</span><strong id="metric-medical">—</strong></article>
-          <article><span>Соціальні</span><strong id="metric-social">—</strong></article>
+      <section class="canvas" aria-label="Карта та аналітика" data-i18n-aria="mapAnalyticsLabel">
+        <div class="metrics" aria-label="Результати активних фільтрів" data-i18n-aria="metricsLabel">
+          <article><span data-i18n="metricHromadas">Громад за активними фільтрами</span><strong id="metric-hromadas">1 472</strong></article>
+          <article><span data-i18n="metricEmpty">Без надавачів у цьому списку</span><strong id="metric-empty">—</strong></article>
+          <article><span data-i18n="metricMedical">Медичних надавачів у цьому списку</span><strong id="metric-medical">—</strong></article>
+          <article><span data-i18n="metricSocial">Соціальних надавачів у цьому списку</span><strong id="metric-social">—</strong></article>
         </div>
 
         <div class="map-shell">
-          <div class="map-toolbar" aria-label="Шари карти">
-            <button class="layer-button is-active" data-layer="boundaries" type="button" aria-pressed="true">Межі</button>
-            <button class="layer-button is-active" data-layer="providers" type="button" aria-pressed="true">Надавачі</button>
-            <button class="layer-button" data-layer="distance" type="button" aria-pressed="false">Віддаленість</button>
+          <div class="map-toolbar" aria-label="Шари карти" data-i18n-aria="mapLayersLabel">
+            <button class="layer-button is-active" data-layer="boundaries" type="button" aria-pressed="true" data-i18n="boundaries">Межі</button>
+            <button class="layer-button is-active" data-layer="providers" type="button" aria-pressed="true" data-i18n="providers">Надавачі</button>
+            <button class="layer-button" data-layer="distance" type="button" aria-pressed="false" data-i18n="remoteness">Віддаленість</button>
           </div>
           <div id="map" aria-label="Інтерактивна карта України"></div>
           <aside id="community-card" class="community-card" aria-live="polite" hidden>
             <button id="close-community" class="community-card__close" type="button" aria-label="Закрити картку">×</button>
-            <div class="eyebrow">Громада</div>
+            <div class="eyebrow" data-i18n="hromada">Громада</div>
             <h2 id="community-name"></h2>
             <p id="community-place" class="community-card__place"></p>
             <div class="community-card__stats">
-              <div><strong id="community-total"></strong><span>усі надавачі</span></div>
-              <div><strong id="community-medical"></strong><span>медичні</span></div>
-              <div><strong id="community-social"></strong><span>соціальні</span></div>
+              <div><strong id="community-total"></strong><span data-i18n="allProviders">усі надавачі</span></div>
+              <div><strong id="community-medical"></strong><span data-i18n="medicalLower">медичні</span></div>
+              <div><strong id="community-social"></strong><span data-i18n="socialLower">соціальні</span></div>
             </div>
             <dl class="distance-list">
-              <div><dt>До районного центру</dt><dd id="community-raion-distance"></dd></div>
-              <div><dt>До обласного центру</dt><dd id="community-oblast-distance"></dd></div>
-              <div><dt>Адміністративний центр</dt><dd id="community-centre"></dd></div>
+              <div><dt data-i18n="toRaion">До районного центру</dt><dd id="community-raion-distance"></dd></div>
+              <div><dt data-i18n="toOblast">До обласного центру</dt><dd id="community-oblast-distance"></dd></div>
+              <div><dt data-i18n="administrativeCentre">Адміністративний центр</dt><dd id="community-centre"></dd></div>
             </dl>
             <p id="community-method" class="community-card__method"></p>
           </aside>
           <div class="map-legend">
-            <span><i class="dot dot--medical"></i> медичні</span>
-            <span><i class="dot dot--social"></i> соціальні</span>
-            <span><i class="line"></i> межа громади</span>
+            <span><i class="dot dot--medical"></i> <span data-i18n="medicalLower">медичні</span></span>
+            <span><i class="dot dot--social"></i> <span data-i18n="socialLower">соціальні</span></span>
+            <span><i class="line"></i> <span data-i18n="hromadaBoundary">межа громади</span></span>
           </div>
           <div id="map-status" class="map-status">Завантажуємо дані…</div>
         </div>
@@ -150,10 +154,10 @@
           <section class="chart-panel" aria-labelledby="chart-title">
             <div class="panel-heading">
               <div>
-                <div class="eyebrow">Профіль доступності</div>
-                <h2 id="chart-title">Послуги та віддаленість</h2>
+                <div class="eyebrow" data-i18n="accessProfile">Профіль доступності</div>
+                <h2 id="chart-title" data-i18n="servicesAndDistance">Послуги та віддаленість</h2>
               </div>
-              <p>Кожна точка — громада. Праворуч — далі від обласного центру; вище — більше надавачів.</p>
+              <p data-i18n="chartHint">Кожна точка — громада. Праворуч — далі від обласного центру; вище — більше надавачів.</p>
             </div>
             <div id="scatter" class="scatter" role="img" aria-label="Графік кількості надавачів та віддаленості"></div>
           </section>
@@ -161,57 +165,57 @@
           <section class="candidate-panel" aria-labelledby="candidate-title">
             <div class="panel-heading panel-heading--table">
               <div>
-                <div class="eyebrow">Громади за фільтрами</div>
-                <h2 id="candidate-title">Кандидати для аналізу</h2>
+                <div class="eyebrow" data-i18n="filteredHromadas">Громади за фільтрами</div>
+                <h2 id="candidate-title" data-i18n="candidates">Кандидати для аналізу</h2>
               </div>
             </div>
-            <div class="candidate-filters" aria-label="Швидкі фільтри кандидатів">
+            <div class="candidate-filters" aria-label="Швидкі фільтри кандидатів" data-i18n-aria="candidateFiltersLabel">
               <label class="candidate-filter candidate-filter--search" for="candidate-search">
-                <span>Пошук</span>
-                <input id="candidate-search" type="search" placeholder="Назва громади, район або область" autocomplete="off" />
+                <span data-i18n="search">Пошук</span>
+                <input id="candidate-search" type="search" placeholder="Назва громади, район або область" data-i18n-placeholder="searchPlaceholder" autocomplete="off" />
               </label>
               <label class="candidate-filter" for="candidate-profile">
-                <span>Профіль послуг</span>
+                <span data-i18n="serviceProfile">Профіль послуг</span>
                 <select id="candidate-profile">
-                  <option value="all">Будь-який профіль</option>
-                  <option value="empty">Без надавачів</option>
-                  <option value="noMedical">Без медичних</option>
-                  <option value="noSocial">Без соціальних</option>
-                  <option value="both">Є медичні й соціальні</option>
+                  <option value="all" data-i18n="anyProfile">Будь-який профіль</option>
+                  <option value="empty" data-i18n="withoutProviders">Без надавачів</option>
+                  <option value="noMedical" data-i18n="withoutMedical">Без медичних</option>
+                  <option value="noSocial" data-i18n="withoutSocial">Без соціальних</option>
+                  <option value="both" data-i18n="bothTypes">Є медичні й соціальні</option>
                 </select>
               </label>
               <label class="candidate-filter" for="candidate-remoteness">
-                <span>Віддаленість</span>
+                <span data-i18n="remoteness">Віддаленість</span>
                 <select id="candidate-remoteness">
-                  <option value="all">Будь-яка відстань</option>
-                  <option value="raion30">30+ км до райцентру</option>
-                  <option value="raion60">60+ км до райцентру</option>
-                  <option value="oblast100">100+ км до облцентру</option>
-                  <option value="oblast150">150+ км до облцентру</option>
+                  <option value="all" data-i18n="anyDistance">Будь-яка відстань</option>
+                  <option value="raion30" data-i18n="raion30">30+ км до райцентру</option>
+                  <option value="raion60" data-i18n="raion60">60+ км до райцентру</option>
+                  <option value="oblast100" data-i18n="oblast100">100+ км до облцентру</option>
+                  <option value="oblast150" data-i18n="oblast150">150+ км до облцентру</option>
                 </select>
               </label>
               <label class="candidate-filter" for="sort-candidates">
-                <span>Сортувати</span>
+                <span data-i18n="sort">Сортувати</span>
                 <select id="sort-candidates">
-                  <option value="oblastDistanceDesc">Віддалені від області</option>
-                  <option value="raionDistanceDesc">Віддалені від району</option>
-                  <option value="providersAsc">Менше надавачів</option>
-                  <option value="providersDesc">Більше надавачів</option>
-                  <option value="nameAsc">За назвою</option>
+                  <option value="oblastDistanceDesc" data-i18n="sortOblast">Віддалені від області</option>
+                  <option value="raionDistanceDesc" data-i18n="sortRaion">Віддалені від району</option>
+                  <option value="providersAsc" data-i18n="sortFewer">Менше надавачів</option>
+                  <option value="providersDesc" data-i18n="sortMore">Більше надавачів</option>
+                  <option value="nameAsc" data-i18n="sortName">За назвою</option>
                 </select>
               </label>
-              <button id="export-csv" class="export-button" type="button">Завантажити CSV</button>
+              <button id="export-csv" class="export-button" type="button" data-i18n="downloadCsv">Завантажити CSV</button>
             </div>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Громада</th>
-                    <th>Надавачі</th>
-                    <th>Мед.</th>
-                    <th>Соц.</th>
-                    <th>До району</th>
-                    <th>До області</th>
+                    <th data-i18n="hromada">Громада</th>
+                    <th data-i18n="providers">Надавачі</th>
+                    <th data-i18n="medicalShort">Мед.</th>
+                    <th data-i18n="socialShort">Соц.</th>
+                    <th data-i18n="toRaionShort">До району</th>
+                    <th data-i18n="toOblastShort">До області</th>
                   </tr>
                 </thead>
                 <tbody id="candidate-rows"></tbody>

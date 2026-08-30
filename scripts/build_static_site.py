@@ -330,10 +330,14 @@ def build() -> dict:
             "id": geo_id,
             "katottg": kse_code,
             "name": props["hromada_ua"],
+            "nameEn": props["hromada_en"],
             "raion": props["rayon_ua"],
+            "raionEn": props["rayon_en"],
             "oblast": props["oblast_ua"],
+            "oblastEn": props["oblast_en"],
             "type": props.get("hromada_type") or "territorial",
             "centre": centre_name,
+            "centreEn": app.transliterate_ua_to_en(centre_name),
             "centreLat": rounded(centre_lat, 5),
             "centreLon": rounded(centre_lon, 5),
             "distanceRaionKm": rounded(raion_distance),
@@ -379,6 +383,7 @@ def build() -> dict:
                 "type": "Feature",
                 "properties": {
                     "name": feature["properties"]["oblast_ua"],
+                    "nameEn": feature["properties"]["oblast_en"],
                 },
                 "geometry": feature["geometry"],
             }

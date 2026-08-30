@@ -54,11 +54,14 @@ class StaticSiteTests(unittest.TestCase):
         self.assertEqual(sum(record["total"] for record in records), 5590)
         self.assertEqual(sum(record["medical"] for record in records), sum(provider["medical"] for provider in self.providers))
         self.assertEqual(sum(record["social"] for record in records), sum(provider["social"] for provider in self.providers))
+        self.assertTrue(all(record["nameEn"] for record in records))
+        self.assertTrue(all(record["oblastEn"] for record in records))
 
     def test_static_ui_has_no_selection_basket(self):
         html = (ROOT / "web" / "index.html").read_text(encoding="utf-8").lower()
         self.assertNotIn("кошик", html)
         self.assertNotIn("0 / 6", html)
+        self.assertNotIn("громад у фокусі", html)
         self.assertIn("до районного центру", html)
         self.assertIn("до обласного центру", html)
 
@@ -67,8 +70,16 @@ class StaticSiteTests(unittest.TestCase):
         self.assertIn('id="candidate-search"', html)
         self.assertIn('id="candidate-profile"', html)
         self.assertIn('id="candidate-remoteness"', html)
-        self.assertIn('<option value="medical">Медичні</option>', html)
-        self.assertIn('<option value="social">Соціальні</option>', html)
+        self.assertIn('<option value="medical" data-i18n="medical">Медичні</option>', html)
+        self.assertIn('<option value="social" data-i18n="social">Соціальні</option>', html)
+
+    def test_static_ui_has_ukrainian_english_switch(self):
+        html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('data-language="uk"', html)
+        self.assertIn('data-language="en"', html)
+        self.assertIn('Hromadas matching active filters', script)
+        self.assertIn('Громад за активними фільтрами', script)
 
     def test_removed_intro_and_verification_badge_stay_removed(self):
         html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
