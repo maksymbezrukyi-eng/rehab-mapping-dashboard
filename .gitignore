@@ -32,3 +32,8 @@ desktop.ini
 
 # Coding-agent runtime/tooling artifacts
 .codex-audit/
+
+# Static dashboard build/cache artifacts
+_site/
+data_sources/kse_full_dataset.csv
+outputs/static_site_audit/

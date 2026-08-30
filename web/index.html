@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Інтерактивна карта доступності реабілітаційних послуг у громадах України"
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Rehab Access Map" />
+    <meta property="og:description" content="Порівняння громад за насиченістю реабілітаційними послугами та віддаленістю від адміністративних центрів." />
+    <meta property="og:image" content="https://maksymbezrukyi-eng.github.io/rehab-mapping-dashboard/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Rehab Access Map" />
+    <meta name="twitter:description" content="Доступність реабілітаційних послуг у громадах України" />
+    <meta name="twitter:image" content="https://maksymbezrukyi-eng.github.io/rehab-mapping-dashboard/og.png" />
+    <title>Rehab Access Map — громади України</title>
+    <link rel="preconnect" href="https://unpkg.com" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIINfQ3ynhMZJOZ6RJeWgB0QZUXNM9s+7Y="
+      crossorigin=""
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="identity" href="#top" aria-label="На початок сторінки">
+        <span class="identity__mark">RA</span>
+        <span>
+          <strong>Rehab Access Map</strong>
+          <small>аналіз громад України</small>
+        </span>
+      </a>
+      <p class="topbar__purpose">
+        Робочий простір для пошуку громад із різною насиченістю послугами та
+        віддаленістю від адміністративних центрів.
+      </p>
+      <span class="data-state"><i></i> 5 590 записів перевірено</span>
+    </header>
+
+    <main id="top" class="workspace">
+      <aside class="filters" aria-label="Фільтри карти">
+        <div class="eyebrow">Фокус дослідження</div>
+        <h1>Де доступ до реабілітації потребує уваги?</h1>
+        <p class="lead">
+          Порівнюйте громади за присутністю надавачів і відстанню до районного
+          та обласного центрів.
+        </p>
+
+        <div class="filter-group">
+          <label for="oblast">Область</label>
+          <select id="oblast">
+            <option>Вся Україна</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label for="raion">Район</label>
+          <select id="raion" disabled>
+            <option>Усі райони</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label for="service">Послуги</label>
+          <select id="service">
+            <option>Усі надавачі</option>
+            <option>Медичні</option>
+            <option>Соціальні</option>
+          </select>
+        </div>
+
+        <fieldset class="filter-group density-filter">
+          <legend>Насиченість надавачами</legend>
+          <div class="segment-control">
+            <label><input type="radio" name="density" value="all" checked /><span>Усі</span></label>
+            <label><input type="radio" name="density" value="low" /><span>0–1</span></label>
+            <label><input type="radio" name="density" value="mid" /><span>2–5</span></label>
+            <label><input type="radio" name="density" value="high" /><span>6+</span></label>
+          </div>
+        </fieldset>
+
+        <div class="filter-group">
+          <div class="label-row">
+            <label for="raion-distance">До районного центру</label>
+            <output id="raion-distance-value">від 0 км</output>
+          </div>
+          <input id="raion-distance" type="range" min="0" max="180" value="0" />
+        </div>
+
+        <div class="filter-group">
+          <div class="label-row">
+            <label for="oblast-distance">До обласного центру</label>
+            <output id="oblast-distance-value">від 0 км</output>
+          </div>
+          <input id="oblast-distance" type="range" min="0" max="400" value="0" />
+        </div>
+
+        <button id="reset-filters" class="reset" type="button">Скинути фільтри</button>
+
+        <div class="method-note">
+          <span>Методика</span>
+          Відстані рахуються по прямій між адміністративними центрами. Джерело
+          та точність показуються в картці кожної громади.
+        </div>
+      </aside>
+
+      <section class="canvas" aria-label="Карта та аналітика">
+        <div class="metrics" aria-label="Ключові показники">
+          <article><span>Громад у фокусі</span><strong id="metric-hromadas">1 472</strong></article>
+          <article><span>Без надавачів</span><strong id="metric-empty">—</strong></article>
+          <article><span>Медичні</span><strong id="metric-medical">—</strong></article>
+          <article><span>Соціальні</span><strong id="metric-social">—</strong></article>
+        </div>
+
+        <div class="map-shell">
+          <div class="map-toolbar" aria-label="Шари карти">
+            <button class="layer-button is-active" data-layer="boundaries" type="button" aria-pressed="true">Межі</button>
+            <button class="layer-button is-active" data-layer="providers" type="button" aria-pressed="true">Надавачі</button>
+            <button class="layer-button" data-layer="distance" type="button" aria-pressed="false">Віддаленість</button>
+          </div>
+          <div id="map" aria-label="Інтерактивна карта України"></div>
+          <aside id="community-card" class="community-card" aria-live="polite" hidden>
+            <button id="close-community" class="community-card__close" type="button" aria-label="Закрити картку">×</button>
+            <div class="eyebrow">Громада</div>
+            <h2 id="community-name"></h2>
+            <p id="community-place" class="community-card__place"></p>
+            <div class="community-card__stats">
+              <div><strong id="community-total"></strong><span>усі надавачі</span></div>
+              <div><strong id="community-medical"></strong><span>медичні</span></div>
+              <div><strong id="community-social"></strong><span>соціальні</span></div>
+            </div>
+            <dl class="distance-list">
+              <div><dt>До районного центру</dt><dd id="community-raion-distance"></dd></div>
+              <div><dt>До обласного центру</dt><dd id="community-oblast-distance"></dd></div>
+              <div><dt>Адміністративний центр</dt><dd id="community-centre"></dd></div>
+            </dl>
+            <p id="community-method" class="community-card__method"></p>
+          </aside>
+          <div class="map-legend">
+            <span><i class="dot dot--medical"></i> медичні</span>
+            <span><i class="dot dot--social"></i> соціальні</span>
+            <span><i class="line"></i> межа громади</span>
+          </div>
+          <div id="map-status" class="map-status">Завантажуємо дані…</div>
+        </div>
+
+        <div class="analysis-grid">
+          <section class="chart-panel" aria-labelledby="chart-title">
+            <div class="panel-heading">
+              <div>
+                <div class="eyebrow">Профіль доступності</div>
+                <h2 id="chart-title">Послуги та віддаленість</h2>
+              </div>
+              <p>Кожна точка — громада. Праворуч — далі від обласного центру; вище — більше надавачів.</p>
+            </div>
+            <div id="scatter" class="scatter" role="img" aria-label="Графік кількості надавачів та віддаленості"></div>
+          </section>
+
+          <section class="candidate-panel" aria-labelledby="candidate-title">
+            <div class="panel-heading panel-heading--table">
+              <div>
+                <div class="eyebrow">Громади за фільтрами</div>
+                <h2 id="candidate-title">Кандидати для аналізу</h2>
+              </div>
+              <div class="table-actions">
+                <label for="sort-candidates">Сортувати</label>
+                <select id="sort-candidates">
+                  <option value="oblastDistanceDesc">Віддалені від області</option>
+                  <option value="raionDistanceDesc">Віддалені від району</option>
+                  <option value="providersAsc">Менше надавачів</option>
+                  <option value="providersDesc">Більше надавачів</option>
+                  <option value="nameAsc">За назвою</option>
+                </select>
+                <button id="export-csv" class="export-button" type="button">Завантажити CSV</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Громада</th>
+                    <th>Надавачі</th>
+                    <th>Мед.</th>
+                    <th>Соц.</th>
+                    <th>До району</th>
+                    <th>До області</th>
+                  </tr>
+                </thead>
+                <tbody id="candidate-rows"></tbody>
+              </table>
+            </div>
+            <p id="table-footnote" class="table-footnote"></p>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
